@@ -113,35 +113,36 @@ mkdir -p config/includes.chroot/etc \
 cp "$SHELLCONF/kdeglobals-locked" config/includes.chroot/etc/xdg/kdeglobals
 echo "HelixOS 1.0 \"Surge\" (Debian 13 trixie)" > config/includes.chroot/etc/helixos-release
 echo "helix" > config/includes.chroot/etc/hostname
-# HelixOS OTA repo client — only wired when the operator has exported the pubkey
+# HelixOS OTA repo client — only wired when pubkey exists AND repo is published.
 # (gpg --armor --export you@mail > helixos-repo-pub.asc in repo root). Secret keys NEVER ship.
 if [ -f "$ROOT/helixos-repo-pub.asc" ]; then
   mkdir -p config/includes.chroot/usr/share/keyrings config/includes.chroot/etc/apt/sources.list.d
   cp "$ROOT/helixos-repo-pub.asc" config/includes.chroot/usr/share/keyrings/helixos-archive-keyring.asc
-  GH_USER="${GH_USER:-ashwant132-art}"
-  printf 'Types: deb\nURIs: https://%s.github.io/HelixOS\nSuites: trixie\nComponents: main\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/helixos-archive-keyring.asc\n' "$GH_USER" > config/includes.chroot/etc/apt/sources.list.d/helixos.sources
-  echo "OTA repo client wired."
+  GH_USER="${GH_USER:-alpha-dev-studio}"
+  REPO_URL="https://${GH_USER}.github.io/HelixOS"
+  if curl -fs HEAD "${REPO_URL}/dists/trixie/Release" >/dev/null 2>&1 || curl -fs "${REPO_URL}/dists/trixie/Release" >/dev/null 2>&1; then
+    printf 'Types: deb\nURIs: %s\nSuites: trixie\nComponents: main\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/helixos-archive-keyring.asc\n' "$REPO_URL" > config/includes.chroot/etc/apt/sources.list.d/helixos.sources
+    echo "OTA repo client wired ($REPO_URL)."
+  else
+    rm -f config/includes.chroot/etc/apt/sources.list.d/helixos.sources
+    echo "WARNING: OTA repo $REPO_URL not published yet — building without HelixOS repo (Debian only)."
+  fi
 fi
 printf '[Theme]\nCurrent=breeze\n' > config/includes.chroot/etc/sddm.conf.d/helixos.conf
-# Install-to-disk desktop icon for the live session (HelixOS installer identity)
-mkdir -p config/includes.chroot/etc/skel/Desktop config/includes.chroot/usr/share/applications \
-  config/includes.chroot/usr/share/pixmaps
+# Install-to-disk desktop icon for the live session (stock look: system icon,
+# stock Debian setup branding — zero Helix artwork anywhere)
+mkdir -p config/includes.chroot/etc/skel/Desktop config/includes.chroot/usr/share/applications
 cat > config/includes.chroot/usr/share/applications/helixos-install.desktop <<'DESK'
 [Desktop Entry]
 Name=Install HelixOS
 Comment=Guided setup: language, timezone, keyboard, user and password
-Exec=pkexec calamares -b helixos
-Icon=helixos-logo
+Exec=pkexec calamares
+Icon=system-software-install
 Terminal=false
 Type=Application
 Categories=System;
 DESK
 cp config/includes.chroot/usr/share/applications/helixos-install.desktop config/includes.chroot/etc/skel/Desktop/
-cp "$SHELLCONF/helixos-logo.png" config/includes.chroot/usr/share/pixmaps/helixos-logo.png
-# Calamares HelixOS branding (selected via calamares -b helixos, no system files patched)
-mkdir -p config/includes.chroot/etc/calamares/branding/helixos
-cp "$ROOT/configs/calamares/helixos/branding.desc" config/includes.chroot/etc/calamares/branding/helixos/
-cp "$SHELLCONF/helixos-logo.png" config/includes.chroot/etc/calamares/branding/helixos/helixos-logo.png
 # Dual-boot engine: rEFInd auto-installer (live-side script) + Calamares job config.
 # The setup's partitioning step picks the partition (alongside/manual incl. Windows
 # shrink); this job then drops rEFInd into the installed ESP automatically.
@@ -317,7 +318,9 @@ sudo rm -rf chroot/usr/share/backgrounds/helixos-wallpaper.svg \
   chroot/etc/skel/Desktop/helixos-install.desktop \
   chroot/usr/share/pixmaps/helixos-logo.png \
   chroot/etc/apt/sources.list.d/helixos-efi.list \
-  chroot/etc/apt/sources.list.d/helixos-efi.sources 2>/dev/null || true
+  chroot/etc/apt/sources.list.d/helixos-efi.sources \
+  chroot/etc/apt/sources.list.d/helixos.sources \
+  chroot/etc/apt/sources.list.d/helixos.list 2>/dev/null || true
 # Stale chroot mounts from killed runs abort the next build — drop them first
 # (lazy fallback detaches even busy ones)
 for _m in chroot/proc chroot/sys chroot/dev/pts chroot/selinux; do
@@ -325,6 +328,9 @@ for _m in chroot/proc chroot/sys chroot/dev/pts chroot/selinux; do
 done
 # Stale zsync artifacts abort the final stage (xz refuses to overwrite)
 rm -f *.zsync *.zsync.xz 2>/dev/null || true
+# Reinstall installer stack every build (a second apt pass autoremoves calamares
+# while leaving our job configs orphaned -> "modules not initialised")
+sudo chroot chroot apt-get install -y --no-remove calamares calamares-settings-debian refind efibootmgr os-prober 2>/dev/null || true
 # Drop the accumulated install queue too — lb APPENDS to chroot/root/packages.chroot
 # and failed runs never consume it, so stale names survive stamp resets
 sudo rm -f config/packages.chroot/* config/packages.binary/* 2>/dev/null || true

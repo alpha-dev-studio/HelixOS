@@ -6,8 +6,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SUITE="${1:-testing}"
 GPGKEY="${GPGKEY:-}"
-GH_USER="${GH_USER:-ashwant132-art}"
-REPO_NAME="${REPO_NAME:-os-github}"
+GH_USER="${GH_USER:-alpha-dev-studio}"
+REPO_NAME="${REPO_NAME:-HelixOS}"
 WORK="$ROOT/build/apt-repo"
 
 [ -n "$GPGKEY" ] || { echo "Set GPGKEY env to your key id (gpg --list-secret-keys)"; exit 1; }
@@ -22,8 +22,9 @@ apt-ftparchive release -o APT::FTPArchive::Release::Origin=HelixOS \
   -o APT::FTPArchive::Release::Suite="$SUITE" \
   -o APT::FTPArchive::Release::Codename=trixie \
   dists/trixie > dists/trixie/Release
-gpg --default-key "$GPGKEY" -abs -o dists/trixie/Release.gpg dists/trixie/Release
-gpg --default-key "$GPGKEY" --clearsign -o dists/trixie/InRelease dists/trixie/Release
+rm -f dists/trixie/Release.gpg dists/trixie/InRelease
+gpg --batch --yes --default-key "$GPGKEY" -abs -o dists/trixie/Release.gpg dists/trixie/Release
+gpg --batch --yes --default-key "$GPGKEY" --clearsign -o dists/trixie/InRelease dists/trixie/Release
 echo "Repo ready in $WORK — push to branch 'repo' and enable Pages:"
 echo "  cd $WORK && git init -b repo && git remote add origin <your-remote> && git add -A && git commit -m 'repo $SUITE' && git push -f origin repo"
 echo "Clients use: https://$GH_USER.github.io/$REPO_NAME trixie main"

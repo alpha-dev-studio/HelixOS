@@ -4,7 +4,7 @@ set -euo pipefail
 # Run in WSL Ubuntu: ./scripts/debian-rootfs.sh
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 WIN_BUILD="$ROOT/build"
-# IMPORTANT: debootstrap tar fails on /mnt/d (NTFS/DrvFs). Build on native ext4.
+# IMPORTANT: debootstrap tar fails on Windows mounts (NTFS). Build on native ext4.
 LIN_BUILD="$HOME/helixos-build"
 BUILD="$LIN_BUILD"
 DEB_RELEASE="trixie"

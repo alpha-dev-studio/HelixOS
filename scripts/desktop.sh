@@ -4,7 +4,7 @@ set -euo pipefail
 # NO-CODE UI: KDE Plasma + SDDM. You build UI with mouse in Edit Mode, zero config files.
 # Labwc kept as lightweight fallback session.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-if [ -d "$HOME/helixos-build/debian-trixie" ]; then BUILD="$HOME/helixos-build"; elif [ -d "$HOME/my-os-build/debian-trixie" ]; then BUILD="$HOME/my-os-build"; else BUILD="$ROOT/build"; fi
+if [ -d "$HOME/helixos-build/debian-trixie" ]; then BUILD="$HOME/helixos-build"; else BUILD="$ROOT/build"; fi
 ROOTFS="$BUILD/debian-trixie"
 CONF="$ROOT/configs/desktop"
 
@@ -44,10 +44,9 @@ sudo umount -R "$ROOTFS/proc" 2>/dev/null || true
 sudo umount -R "$ROOTFS/sys" 2>/dev/null || true
 sudo umount -R "$ROOTFS/dev" 2>/dev/null || true
 
-# push HelixOS energy defaults (wallpaper + SDDM theme). Plasma user tweaks override these visually.
-sudo mkdir -p "$ROOTFS/usr/share/backgrounds" "$ROOTFS/etc/sddm.conf.d" "$ROOTFS/home/helix/.config/labwc" \
+# push HelixOS defaults (locked session config). Plasma user tweaks override these visually.
+sudo mkdir -p "$ROOTFS/etc/sddm.conf.d" "$ROOTFS/home/helix/.config/labwc" \
   "$ROOTFS/home/helix/.config/waybar" "$ROOTFS/home/helix/.config/foot"
-sudo cp "$CONF/helixos-wallpaper.svg" "$ROOTFS/usr/share/backgrounds/helixos-wallpaper.svg"
 printf '[Theme]\nCurrent=breeze\n[General]\nHaltCommand=/bin/systemctl poweroff\nRebootCommand=/bin/systemctl reboot\n' | sudo tee "$ROOTFS/etc/sddm.conf.d/helixos.conf"
 printf '[Autologin]\nUser=helix\nSession=plasma.desktop\n' | sudo tee -a "$ROOTFS/etc/sddm.conf.d/helixos.conf"
 # Labwc fallback configs (optional session)

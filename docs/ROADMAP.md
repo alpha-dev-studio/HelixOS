@@ -7,7 +7,7 @@ set -euo pipefail
 - [ ] `setup-wsl.sh` installs qemu-system-x86, build-essential, bc, flex, bison, libssl-dev, libelf-dev, cpio
 - [ ] `build.sh` builds: vanilla kernel 6.8.x (defconfig + tweaks) + static BusyBox + initramfs
 - [ ] `run.sh` boots with `qemu-system-x86_64 -kernel -initrd`
-- Success: shell prompt `my-os:/ #`
+- Success: shell prompt `helix:/ #`
 
 ## Milestone 2 — Real userspace
 - Switch init script -> /sbin/init with hostname, mounts (/proc /sys /dev), DHCP
