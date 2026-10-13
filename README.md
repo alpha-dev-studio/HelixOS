@@ -2,8 +2,7 @@
 
 HelixOS is a usable desktop OS built on Debian 13 “trixie” — tuned for
 older and low-RAM machines (4 GB first, everything else after). Plasma
-desktop, Debian package universe, Calamares guided setup, quiet boot,
-and a dual-boot friendly bootloader story out of the box.
+desktop, Debian package universe, Calamares guided setup and a dual-boot friendly bootloader story out of the box.
 
 Status: pre-alpha. It boots on real hardware from a live USB.
 Daily-driver and installer testing is in progress — expect rough edges.
