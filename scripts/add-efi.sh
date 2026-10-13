@@ -28,6 +28,10 @@ EOF
 SIGDIR="$HOME/helixos-iso/signed-efi"
 CHROOT="$HOME/helixos-iso/chroot"
 mkdir -p "$SIGDIR"
+# Reuse previously downloaded signed debs — skip chroot apt entirely when present
+if ls "$SIGDIR"/shim-signed_* >/dev/null 2>&1 && ls "$SIGDIR"/grub-efi-amd64-signed_* >/dev/null 2>&1; then
+  echo "Signed debs cached in $SIGDIR — skipping download."
+else
 if [ -d "$CHROOT/etc" ]; then
   sudo mount -t proc none "$CHROOT/proc" 2>/dev/null || true
   sudo mount --rbind /sys "$CHROOT/sys" 2>/dev/null || true
@@ -37,12 +41,18 @@ if [ -d "$CHROOT/etc" ]; then
   sudo rm -f "$CHROOT/etc/apt/sources.list.d/helixos-efi.sources" /etc/apt/sources.list.d/helixos-efi.sources 2>/dev/null || true
   APTLOG="$WORK/chroot-apt.log"
   sudo chroot "$CHROOT" apt-get update > "$APTLOG" 2>&1 || { echo "--- chroot apt update failed ---"; tail -n 8 "$APTLOG"; }
-  (cd "$SIGDIR" && sudo chroot "$CHROOT" apt-get download shim-signed grub-efi-amd64-signed >> "$APTLOG" 2>&1) || { echo "--- chroot download failed ---"; tail -n 8 "$APTLOG"; }
+  # apt-get download inside chroot must run with cwd=/tmp (host $SIGDIR is invisible
+  # inside the chroot, so the old '(cd $SIGDIR && chroot ... download)' never landed)
+  sudo chroot "$CHROOT" sh -c "cd /tmp && apt-get download shim-signed grub-efi-amd64-signed" >> "$APTLOG" 2>&1 || { echo "--- chroot download failed ---"; tail -n 12 "$APTLOG"; }
+  sudo cp -f "$CHROOT"/tmp/shim-signed*.deb "$CHROOT"/tmp/grub-efi-amd64-signed*.deb "$SIGDIR/" 2>/dev/null || echo "--- copy debs out of chroot failed ---"
+  sudo rm -f "$CHROOT"/tmp/shim-signed*.deb "$CHROOT"/tmp/grub-efi-amd64-signed*.deb 2>/dev/null || true
+  sudo chown "$(id -u):$(id -g)" "$SIGDIR"/*.deb 2>/dev/null || true
   # One-shot source must not ride into the image (it duplicates sources.list -> apt warnings)
   sudo rm -f "$CHROOT/etc/apt/sources.list.d/helixos-efi.list" "$CHROOT/etc/apt/sources.list.d/helixos-efi.sources" 2>/dev/null || true
   sudo umount -R "$CHROOT/proc" 2>/dev/null || true
   sudo umount -R "$CHROOT/sys" 2>/dev/null || true
   sudo umount -R "$CHROOT/dev" 2>/dev/null || true
+fi
 fi
 if ls "$SIGDIR"/shim-signed_* >/dev/null 2>&1 && ls "$SIGDIR"/grub-efi-amd64-signed_* >/dev/null 2>&1; then
   rm -rf "$SIGDIR/extract" && mkdir -p "$SIGDIR/extract"

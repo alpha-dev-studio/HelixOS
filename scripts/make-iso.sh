@@ -356,4 +356,4 @@ if [ -z "$ISO_OUT" ]; then echo "ERROR: no ISO produced"; exit 1; fi
 # Inject UEFI (grub-efi) — old live-build has no such stage, trixie grub-legacy is hollow
 bash "$ROOT/scripts/add-efi.sh" "$ISO_OUT" "$LB_DIR/helixos-live.iso"
 cp -vf helixos-live.iso "$ROOT/build/helixos-live.iso" 2>/dev/null || sudo cp -vf helixos-live.iso "$ROOT/build/helixos-live.iso"
-echo "ISO OK: $ROOT/build/helixos-live.iso (BIOS syslinux + UEFI grub, HelixOS theme) — flash Rufus, Secure Boot OFF, F12."
+echo "ISO OK: $ROOT/build/helixos-live.iso (BIOS syslinux + UEFI grub, signed SB chain) — flash Rufus DD mode, F12."

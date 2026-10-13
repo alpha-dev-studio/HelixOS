@@ -1,2 +1,6 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Enforce LF everywhere so bash scripts never get CRLF on Windows checkouts
+* text=auto eol=lf
+*.sh text eol=lf
+*.cfg text eol=lf
+*.desc text eol=lf
+*.list text eol=lf
