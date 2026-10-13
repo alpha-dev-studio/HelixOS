@@ -23,8 +23,6 @@ Daily-driver and installer testing is in progress — expect rough edges.
 
 - `scripts/make-iso.sh` — official Debian live-build pipeline + EFI injection
 - `scripts/add-efi.sh` — Secure Boot chain + dual BIOS/UEFI image assembly
-- `scripts/build-debs.sh` — builds the `helixos-*` OTA packages
-- `scripts/publish-pages.sh` — publishes the signed apt repo (GitHub Pages)
 - `configs/` — GRUB entries, desktop defaults, Calamares branding, lockdown
 - `packages/helixos-base/` — base identity deb (OTA channel)
 - `docs/ROADMAP.md` — where this is going

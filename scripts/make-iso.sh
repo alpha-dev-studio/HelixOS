@@ -189,13 +189,17 @@ try:
     except OSError:
         have_job = False
     hits = [i for i, l in enumerate(src) if l.strip() == '- bootloader']
-    if have_job and len(hits) == 1 and not any('helix-refind' in l for l in src):
+    # repair: drop any previous helix-refind lines (incl. wrong-indent ones that
+    # Calamares reads as "bootloader-shellprocess@helix-refind")
+    src = [l for l in src if 'helix-refind' not in l]
+    hits = [i for i, l in enumerate(src) if l.strip() == '- bootloader']
+    if have_job and len(hits) == 1:
         shutil.copyfile(p, p + '.helixos-bak')
-        src.insert(hits[0] + 1, '    - shellprocess@helix-refind\n')
+        src.insert(hits[0] + 1, '  - shellprocess@helix-refind\n')
         open(p, 'w').writelines(src)
         print('helix-refind job sequenced after bootloader')
     else:
-        print('helix-refind sequencing skipped (already present or layout differs)')
+        print('helix-refind sequencing skipped (layout differs)')
 except Exception as e:
     print('helix-refind sequencing skipped:', e)
 PYEOF
@@ -307,8 +311,8 @@ sudo rm -rf binary chroot/binary 2>/dev/null || true
 rm -f .build/binary_*
 # Remove dead hook subdirs from earlier runs (live-build only reads config/hooks/ flat)
 rm -rf config/hooks/live config/hooks/binary 2>/dev/null || true
-# Purge retired Helix artwork from the persistent chroot (includes only ADD —
-# removed branding would otherwise ride along in every future squashfs)
+# Purge retired Helix artwork from persistent config/includes.chroot AND chroot
+# (both persist across builds; includes only ADD, so stale files re-inject forever)
 sudo rm -rf chroot/usr/share/backgrounds/helixos-wallpaper.svg \
   chroot/usr/share/helixos \
   chroot/usr/share/plymouth/themes/helixos \
@@ -321,6 +325,14 @@ sudo rm -rf chroot/usr/share/backgrounds/helixos-wallpaper.svg \
   chroot/etc/apt/sources.list.d/helixos-efi.sources \
   chroot/etc/apt/sources.list.d/helixos.sources \
   chroot/etc/apt/sources.list.d/helixos.list 2>/dev/null || true
+# Same retired files in config/includes.chroot (re-injected into every build if left)
+rm -rf config/includes.chroot/usr/share/backgrounds/helixos-wallpaper.svg \
+  config/includes.chroot/usr/share/helixos \
+  config/includes.chroot/usr/share/plymouth/themes/helixos \
+  config/includes.chroot/usr/share/sddm/themes/breeze/theme.conf.user \
+  config/includes.chroot/etc/calamares/branding/helixos \
+  config/includes.chroot/etc/skel/.config/autostart/helixos-wallpaper.desktop \
+  config/includes.chroot/usr/share/pixmaps/helixos-logo.png 2>/dev/null || true
 # Stale chroot mounts from killed runs abort the next build — drop them first
 # (lazy fallback detaches even busy ones)
 for _m in chroot/proc chroot/sys chroot/dev/pts chroot/selinux; do

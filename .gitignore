@@ -20,3 +20,6 @@ Thumbs.db
 *~
 *.swp
 .vscode/
+# Local-only OTA tooling — keep on disk, never publish
+scripts/build-debs.sh
+scripts/publish-pages.sh
