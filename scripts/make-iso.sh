@@ -82,6 +82,48 @@ plymouth-themes
 unattended-upgrades
 packagekit
 packagekit-tools
+# Every hardware driver/firmware Debian trixie ships (nothing custom — kernel
+# drivers already ride in linux-image; these are the binary blobs). Covers
+# Intel/AMD/NVIDIA GPUs, all wifi vendors, sound (SOF), bluetooth, NICs.
+firmware-linux
+firmware-linux-nonfree
+firmware-amd-graphics
+firmware-atheros
+firmware-brcm80211
+firmware-intel-graphics
+firmware-intel-misc
+firmware-intel-sound
+firmware-iwlwifi
+firmware-libertas
+firmware-mediatek
+firmware-misc-nonfree
+firmware-nvidia-graphics
+firmware-realtek
+firmware-sof-signed
+firmware-bnx2
+firmware-bnx2x
+firmware-cavium
+firmware-marvell-prestera
+firmware-netxen
+firmware-netronome
+firmware-qlogic
+firmware-ast
+firmware-cirrus
+firmware-ipw2x00
+firmware-ivtv
+firmware-myricom
+firmware-siano
+firmware-zd1211
+atmel-firmware
+bluez-firmware
+dahdi-firmware-nonfree
+iucode-tool
+amd64-microcode
+intel-microcode
+# Offline installs: GRUB + shim in the live system so Calamares' bootloader
+# step works with no network (target inherits them via unpackfs)
+grub-efi-amd64
+shim-signed
 fonts-noto-core
 fonts-hack
 labwc
@@ -353,7 +395,7 @@ ls -lh *.hybrid.iso *.iso 2>/dev/null || true
 mkdir -p "$ROOT/build"
 ISO_OUT="$(ls -t helixos-live*.iso helixos-live*.hybrid.iso live-image*.iso binary.hybrid.iso 2>/dev/null | head -n1 || true)"
 if [ -z "$ISO_OUT" ]; then echo "ERROR: no ISO produced"; exit 1; fi
-# Inject UEFI (grub-efi) — old live-build has no such stage, trixie grub-legacy is hollow
+# Inject UEFI (grub-efi) — old live-build has no such stage, trixie grub-legacy is hollow.
+# add-efi.sh mirrors the final ISO to $ROOT/build itself, so both entry points land together.
 bash "$ROOT/scripts/add-efi.sh" "$ISO_OUT" "$LB_DIR/helixos-live.iso"
-cp -vf helixos-live.iso "$ROOT/build/helixos-live.iso" 2>/dev/null || sudo cp -vf helixos-live.iso "$ROOT/build/helixos-live.iso"
-echo "ISO OK: $ROOT/build/helixos-live.iso (BIOS syslinux + UEFI grub, signed SB chain) — flash Rufus DD mode, F12."
+echo "ISO OK: $ROOT/build/helixos-live.iso (BIOS syslinux + UEFI grub, signed SB chain) — flash Rufus ISO mode (DD fallback), F12."
