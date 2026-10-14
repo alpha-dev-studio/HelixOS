@@ -58,11 +58,16 @@ if ls "$SIGDIR"/shim-signed_* >/dev/null 2>&1 && ls "$SIGDIR"/grub-efi-amd64-sig
   rm -rf "$SIGDIR/extract" && mkdir -p "$SIGDIR/extract"
   dpkg-deb -x "$SIGDIR"/shim-signed_*.deb "$SIGDIR/extract" 2>/dev/null || dpkg-deb -x $(ls -t "$SIGDIR"/shim-signed_*.deb | head -n1) "$SIGDIR/extract"
   dpkg-deb -x $(ls -t "$SIGDIR"/grub-efi-amd64-signed_*.deb | head -n1) "$SIGDIR/extract"
-  cp -f "$SIGDIR/extract/usr/lib/shim/shimx64.efi.signed" "$EFIDIR/EFI/BOOT/BOOTX64.EFI" 2>/dev/null \
-    || cp -f "$SIGDIR/extract/usr/lib/shim/shimx64.efi" "$EFIDIR/EFI/BOOT/BOOTX64.EFI"
-  cp -f "$SIGDIR/extract/usr/lib/grub/x86_64-efi-signed/grubx64.efi.signed" "$EFIDIR/EFI/BOOT/grubx64.efi" 2>/dev/null \
-    || cp -f "$SIGDIR/extract/usr/lib/grub/x86_64-efi-signed/grubx64.efi" "$EFIDIR/EFI/BOOT/grubx64.efi" || true
-  cp -f "$SIGDIR/extract/usr/lib/shim/mmx64.efi" "$EFIDIR/EFI/BOOT/" 2>/dev/null || true
+  # Locate binaries dynamically — never silently ship an ESP without grubx64.efi
+  # (shim boots, then fails with "failed to open \EFI\BOOT\grubx64.efi").
+  SHIM_BIN="$(find "$SIGDIR/extract" -name 'shimx64.efi*' | head -n1)"
+  GRUB_BIN="$(find "$SIGDIR/extract" -name 'grubx64.efi*' | head -n1)"
+  MOK_BIN="$(find "$SIGDIR/extract" -name 'mmx64.efi' | head -n1)"
+  [ -n "$SHIM_BIN" ] || { echo "ERROR: no shim binary in signed debs — inspect with: find $SIGDIR/extract -name '*.efi'"; exit 1; }
+  [ -n "$GRUB_BIN" ] || { echo "ERROR: no grub binary in signed debs — inspect with: find $SIGDIR/extract -name '*.efi'"; exit 1; }
+  cp -f "$SHIM_BIN" "$EFIDIR/EFI/BOOT/BOOTX64.EFI"
+  cp -f "$GRUB_BIN" "$EFIDIR/EFI/BOOT/grubx64.efi"
+  [ -n "$MOK_BIN" ] && cp -f "$MOK_BIN" "$EFIDIR/EFI/BOOT/" || true
   echo "Secure Boot chain: Debian-signed shim+grub (SB can stay ON)."
 else
   echo "WARNING: signed debs unavailable — falling back to self-built BOOTX64.EFI (needs Secure Boot OFF)."
@@ -89,6 +94,8 @@ ISO_MBR=/usr/lib/ISOLINUX/isohdpfx.bin
 # visible as files; DD mode works from the appended partition alone)
 sudo mkdir -p "$LB_DIR/binary/EFI/BOOT"
 sudo cp -f "$EFIDIR/EFI/BOOT/BOOTX64.EFI" "$LB_DIR/binary/EFI/BOOT/BOOTX64.EFI"
+sudo cp -f "$EFIDIR/EFI/BOOT/grubx64.efi" "$LB_DIR/binary/EFI/BOOT/grubx64.efi" 2>/dev/null || true
+sudo cp -f "$EFIDIR/EFI/BOOT/mmx64.efi" "$LB_DIR/binary/EFI/BOOT/mmx64.efi" 2>/dev/null || true
 sudo cp -f "$WORK/early.cfg" "$LB_DIR/binary/EFI/BOOT/grub.cfg"
 sudo chown -R "$(id -u):$(id -g)" "$LB_DIR/binary/EFI" 2>/dev/null || true
 rm -f "$OUT" 2>/dev/null || sudo rm -f "$OUT"
@@ -106,5 +113,9 @@ rm -f "$OUT" 2>/dev/null || sudo rm -f "$OUT"
 isohybrid --uefi "$OUT"
 sudo chown "$(id -u):$(id -g)" "$OUT" 2>/dev/null || true
 ls -lh "$OUT"
+# Mirror into the repo so standalone runs land in the same place as make-iso.sh builds
+mkdir -p "$ROOT/build"
+cp -vf "$OUT" "$ROOT/build/helixos-live.iso" 2>/dev/null || sudo cp -vf "$OUT" "$ROOT/build/helixos-live.iso"
 rm -rf "$WORK"
 echo "EFI OK: $OUT (El Torito BIOS + EFI, isohybrid --uefi)"
+echo "Mirrored: $ROOT/build/helixos-live.iso"
