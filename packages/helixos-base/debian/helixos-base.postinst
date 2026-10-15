@@ -1,0 +1,27 @@
+#!/bin/sh
+set -e
+# helixos-base postinst: converge an installed system to single-icon,
+# single-user, Plasma-first — the same end state fresh ISOs now ship.
+case "$1" in
+  configure)
+    # Live user cleanup: drop helix once a real account exists.
+    if id helix >/dev/null 2>&1; then
+      OTHERS="$(awk -F: '$3 >= 1000 && $3 < 60000 && $1 != "helix" && $1 != "nobody" {print $1}' /etc/passwd)"
+      if [ -n "$OTHERS" ]; then
+        userdel -r helix 2>/dev/null || true
+      fi
+    fi
+    # Plasma first: hide any fallback session from the login screen.
+    if [ -f /usr/share/wayland-sessions/labwc.desktop ]; then
+      grep -q '^NoDisplay=' /usr/share/wayland-sessions/labwc.desktop || echo 'NoDisplay=true' >> /usr/share/wayland-sessions/labwc.desktop
+    fi
+    # Single installer icon: stock Calamares launchers never belong on disk.
+    rm -f /usr/share/applications/calamares-install-debian.desktop /usr/share/applications/install-debian.desktop /etc/skel/Desktop/install-debian.desktop 2>/dev/null || true
+    # Repo separation migration: apt/Discover go back to Debian-only. The
+    # HelixOS Updater (shipped above) re-enables our repo on demand and hides
+    # it again after — no action needed, next Updater launch explains itself.
+    rm -f /etc/apt/sources.list.d/helixos.sources /etc/apt/sources.list.d/helixos.list 2>/dev/null || true
+    ;;
+esac
+#DEBHELPER#
+exit 0

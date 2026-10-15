@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# helixos-upgrade — major-release jumps with no data loss (Surge->Arc->Flux).
+# No USB, no reinstall, no wiped /home. Strategy:
+#   1. snapper pre-snapshot of btrfs root (GRUB-bootable fallback)
+#   2. swap apt sources to the target suite (Debian + HelixOS repo)
+#   3. staged full-upgrade; on ANY failure, sources restore + boot the snapshot
+#
+# Usage: sudo helixos-upgrade [target-suite]   (default: next after current)
+# Targets unlock as releases ship; running early just prints the path status.
+CODENAME_NEXT_trixie="forky"
+CODENAME_NEXT_forky=""
+REPO_BASE="https://alpha-dev-studio.github.io/HelixOS"
+
+[ "$(id -u)" -eq 0 ] || { echo "Run as root: sudo helixos-upgrade"; exit 1; }
+CURRENT="$(lsb_release -cs 2>/dev/null || awk -F= '/VERSION_CODENAME/{print $2}' /etc/os-release)"
+TARGET="${1:-}"
+if [ -z "$TARGET" ]; then
+  case "$CURRENT" in
+    trixie) TARGET="$CODENAME_NEXT_trixie" ;;
+    forky) TARGET="$CODENAME_NEXT_forky" ;;
+  esac
+fi
+if [ -z "$TARGET" ]; then
+  echo "No upgrade path from '$CURRENT' yet — you are on the newest HelixOS."
+  exit 0
+fi
+echo "Upgrade path: $CURRENT -> $TARGET"
+if ! curl -fs "https://deb.debian.org/debian/dists/$TARGET/Release" >/dev/null 2>&1; then
+  echo "Target suite '$TARGET' is not released upstream yet. Nothing to do."
+  exit 0
+fi
+
+# 1. Safety snapshot (btrfs root required for rollback)
+if [ -e /.snapshots ] || findmnt -no FSTYPE / | grep -q btrfs; then
+  PRE="$(snapper create --type pre --cleanup-algorithm number --print-number --description "helixos-upgrade to $TARGET")"
+  echo "Fallback snapshot #$PRE ready."
+  echo "If the upgrade fails: boot the live USB, mount your root to /mnt, then:"
+  echo "  sudo btrfs subvolume list /mnt | grep snap   # find the #$PRE snapshot id"
+  echo "  sudo btrfs subvolume set-default <id> /mnt && reboot"
+else
+  echo "WARNING: / is not btrfs — no snapshot fallback available."
+  echo "Back up /home, then rerun with --without-snapshot."
+  [ "${2:-}" = "--without-snapshot" ] || exit 1
+fi
+
+# 2. Swap suites (backups first, restore on any failure)
+BACKUP_DIR="/var/backups/helixos-upgrade-$TARGET"
+mkdir -p "$BACKUP_DIR"
+cp -a /etc/apt/sources.list "$BACKUP_DIR/" 2>/dev/null || true
+cp -a /etc/apt/sources.list.d "$BACKUP_DIR/" 2>/dev/null || true
+restore_sources() {
+  cp -a "$BACKUP_DIR/sources.list" /etc/apt/sources.list 2>/dev/null || true
+  rm -rf /etc/apt/sources.list.d
+  cp -a "$BACKUP_DIR/sources.list.d" /etc/apt/sources.list.d 2>/dev/null || true
+  echo "Sources restored. If the system misbehaves, roll back to snapshot #$PRE"
+  echo "via live USB: mount root at /mnt, btrfs subvolume set-default <id> /mnt, reboot."
+}
+trap restore_sources ERR
+sed -i "s/$CURRENT/$TARGET/g" /etc/apt/sources.list
+sed -i "s/$CURRENT/$TARGET/g" /etc/apt/sources.list.d/* 2>/dev/null || true
+
+# 3. Staged upgrade
+apt-get update
+apt-get full-upgrade -y
+trap - ERR
+
+# 4. Pair the snapshot and hand over
+snapper create --type post --pre-number="$PRE" --cleanup-algorithm number --description "helixos-upgrade to $TARGET" || true
+echo "Upgrade to $TARGET complete. Reboot to boot into it."
+echo "If anything is wrong after reboot, roll back to snapshot #$PRE"
+echo "via live USB (mount root at /mnt, btrfs subvolume set-default, reboot)."

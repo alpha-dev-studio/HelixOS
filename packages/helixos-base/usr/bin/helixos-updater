@@ -1,0 +1,240 @@
+#!/usr/bin/env python3
+"""HelixOS Updater — Qt GUI. Runs as the user; privileged work goes through
+pkexec + helixos-updater-backend (polkit rule keeps it passwordless)."""
+import sys
+from PyQt6.QtWidgets import (
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel,
+    QListWidget, QProgressBar, QPushButton, QTextEdit,
+)
+from PyQt6.QtCore import QProcess, Qt, QTimer
+
+BACKEND = "/usr/libexec/helixos-updater-backend"
+SOURCES = "/etc/helixos/updater.sources"
+
+QSS = """
+QWidget { background: #0b0e1a; color: #e6f7ff; font-size: 14px; }
+QLabel#title { font-size: 22px; font-weight: bold; }
+QLabel#sub { color: #9fb3c8; }
+QListWidget { background: #111527; border: 1px solid #1e2542; border-radius: 8px; }
+QTextEdit { background: #070a15; border: 1px solid #1e2542; border-radius: 8px;
+            font-family: monospace; font-size: 12px; }
+QProgressBar { border: 1px solid #1e2542; border-radius: 8px; background: #111527;
+               text-align: center; height: 22px; }
+QProgressBar::chunk { background: #00f0ff; border-radius: 7px; }
+QPushButton { background: #00f0ff; color: #04222a; font-weight: bold;
+              border: none; border-radius: 8px; padding: 10px 18px; }
+QPushButton:disabled { background: #1e2542; color: #9fb3c8; }
+QPushButton#ghost { background: transparent; color: #e6f7ff;
+                    border: 1px solid #2c3458; }
+"""
+
+WORKING = "Working — leave this window open…"
+
+
+class Updater(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("HelixOS Updater")
+        self.resize(560, 480)
+        self.proc = None
+
+        lay = QVBoxLayout(self)
+        self.title = QLabel("HelixOS Updater")
+        self.title.setObjectName("title")
+        self.sub = QLabel("System updates for HelixOS.")
+        self.sub.setObjectName("sub")
+        self.sub.setWordWrap(True)
+        self.list = QListWidget()
+        self.bar = QProgressBar()
+        self.bar.setVisible(False)
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumHeight(140)
+
+        btns = QHBoxLayout()
+        self.check_btn = QPushButton("Check for updates")
+        self.install_btn = QPushButton("Install updates")
+        self.install_btn.setEnabled(False)
+        self.reboot_btn = QPushButton("Reboot now")
+        self.reboot_btn.setObjectName("ghost")
+        self.reboot_btn.setVisible(False)
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.setObjectName("ghost")
+        self.cancel_btn.setVisible(False)
+        btns.addWidget(self.check_btn)
+        btns.addWidget(self.install_btn)
+        btns.addWidget(self.reboot_btn)
+        btns.addWidget(self.cancel_btn)
+
+        lay.addWidget(self.title)
+        lay.addWidget(self.sub)
+        lay.addWidget(self.list)
+        lay.addWidget(self.bar)
+        lay.addWidget(self.log)
+        lay.addLayout(btns)
+
+        self.check_btn.clicked.connect(self.on_check)
+        self.install_btn.clicked.connect(self.on_install)
+        self.reboot_btn.clicked.connect(self.on_reboot)
+        self.cancel_btn.clicked.connect(self.on_cancel)
+        self.pending = []
+        self.on_check()
+
+    # --- helpers ---
+    def busy(self, on, text=""):
+        self.bar.setVisible(on)
+        if on:
+            self.bar.setMaximum(0)  # busy animation
+        self.cancel_btn.setVisible(on)
+        self.status(text)
+        for b in (self.check_btn, self.install_btn):
+            b.setEnabled(not on)
+
+    def status(self, text):
+        self.sub.setText(text)
+
+    def run_backend(self, *args, timeout_ms=600000):
+        if self.proc is not None:
+            return None
+        self.proc = QProcess(self)
+        self.proc.setProgram("pkexec")
+        self.proc.setArguments([BACKEND, *args])
+        self.proc.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self.proc.start()
+        mine = self.proc
+        QTimer.singleShot(timeout_ms, lambda: self.watchdog(mine))
+        return self.proc
+
+    def watchdog(self, p):
+        if p is not None and p is self.proc and p.state() != QProcess.ProcessState.NotRunning:
+            self.log.append("Timed out — stopping. Try again (a background refresh may hold the package lists).")
+            p.kill()
+
+    def on_cancel(self):
+        if self.proc is not None and self.proc.state() != QProcess.ProcessState.NotRunning:
+            self.log.append("Cancelled.")
+            self.proc.kill()
+
+    # --- flows ---
+    def on_check(self):
+        import os
+        if self.proc is not None:
+            return
+        if not os.path.exists(SOURCES):
+            self.list.clear()
+            self.list.addItem("Not enabled yet.")
+            self.status("Enable HelixOS system updates to begin.")
+            self.install_btn.setEnabled(False)
+            self.check_btn.setText("Enable updates")
+            try:
+                self.check_btn.clicked.disconnect()
+            except TypeError:
+                pass
+            self.check_btn.clicked.connect(self.on_enable)
+            return
+        self.list.clear()
+        self.install_btn.setEnabled(False)
+        self.busy(True, WORKING)
+        p = self.run_backend("__list")
+        if p is None:
+            self.busy(False)
+            return
+        out = []
+        def on_out():
+            chunk = bytes(p.readAllStandardOutput()).decode()
+            out.append(chunk)
+            self.log.append(chunk.strip())
+        p.readyReadStandardOutput.connect(on_out)
+        p.finished.connect(lambda *_: self.check_done("".join(out)))
+
+    def on_enable(self):
+        self.busy(True, WORKING)
+        p = self.run_backend("__enable")
+        if p is None:
+            self.busy(False)
+            return
+        p.readyReadStandardOutput.connect(
+            lambda: self.log.append(bytes(p.readAllStandardOutput()).decode().strip()))
+        p.finished.connect(lambda *_: self.enable_done(p))
+
+    def enable_done(self, p):
+        self.proc = None
+        self.busy(False)
+        if p.exitCode() == 0:
+            try:
+                self.check_btn.clicked.disconnect()
+            except TypeError:
+                pass
+            self.check_btn.clicked.connect(self.on_check)
+            self.check_btn.setText("Check for updates")
+            self.on_check()
+        else:
+            self.status("Enabling failed — see log.")
+            self.log.append("Enable failed. Is helixos-base installed with its keyring?")
+
+    def check_done(self, text):
+        self.proc = None
+        self.busy(False)
+        lines = [ln for ln in text.splitlines() if ln.startswith("helixos")]
+        self.list.clear()
+        self.pending = lines
+        if lines:
+            for ln in lines:
+                self.list.addItem(ln)
+            self.status(f"{len(lines)} update(s) available.")
+            self.install_btn.setEnabled(True)
+        else:
+            self.status("HelixOS is up to date.")
+            self.install_btn.setEnabled(False)
+        self.ask_reboot(silent=True)
+
+    def on_install(self):
+        if self.proc is not None:
+            return
+        self.install_btn.setEnabled(False)
+        self.busy(True, WORKING)
+        self.log.clear()
+        p = self.run_backend("__install")
+        if p is None:
+            self.busy(False)
+            return
+        p.readyReadStandardOutput.connect(
+            lambda: self.log.append(bytes(p.readAllStandardOutput()).decode().strip()))
+        p.finished.connect(self.install_done)
+
+    def install_done(self):
+        self.proc = None
+        self.busy(False)
+        self.status("Install finished — re-checking.")
+        self.log.append("Done. Re-checking for updates…")
+        self.on_check()
+
+    def ask_reboot(self, silent=False):
+        p = QProcess(self)
+        p.setProgram("pkexec")
+        p.setArguments([BACKEND, "__needs-reboot"])
+        buf = []
+        p.readyReadStandardOutput.connect(
+            lambda: buf.append(bytes(p.readAllStandardOutput()).decode()))
+        def done():
+            self.reboot_btn.setVisible("YES" in "".join(buf))
+            if "YES" in "".join(buf) and not silent:
+                self.status("A restart is needed to finish updates.")
+        p.finished.connect(lambda *_: done())
+        p.start()
+
+    def on_reboot(self):
+        import subprocess
+        subprocess.run(["pkexec", "systemctl", "reboot"])
+
+
+def main():
+    app = QApplication(sys.argv)
+    app.setStyleSheet(QSS)
+    w = Updater()
+    w.show()
+    sys.exit(app.exec())
+
+
+if __name__ == "__main__":
+    main()

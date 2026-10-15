@@ -113,9 +113,15 @@ rm -f "$OUT" 2>/dev/null || sudo rm -f "$OUT"
 isohybrid --uefi "$OUT"
 sudo chown "$(id -u):$(id -g)" "$OUT" 2>/dev/null || true
 ls -lh "$OUT"
-# Mirror into the repo so standalone runs land in the same place as make-iso.sh builds
+# Mirror into the repo so standalone runs land in the same place as make-iso.sh builds.
+# Tolerant: on 4GB hosts the 2.6GB cross-filesystem copy can OOM ("Cannot allocate
+# memory") — the ISO itself is already complete, so never fail the build over it.
 mkdir -p "$ROOT/build"
-cp -vf "$OUT" "$ROOT/build/helixos-live.iso" 2>/dev/null || sudo cp -vf "$OUT" "$ROOT/build/helixos-live.iso"
+if cp -vf "$OUT" "$ROOT/build/helixos-live.iso" 2>/dev/null \
+  || sudo cp -vf "$OUT" "$ROOT/build/helixos-live.iso" 2>/dev/null; then
+  echo "Mirrored: $ROOT/build/helixos-live.iso"
+else
+  echo "WARNING: mirror copy failed (likely 4GB OOM) — flash $OUT directly (same bytes)."
+fi
 rm -rf "$WORK"
 echo "EFI OK: $OUT (El Torito BIOS + EFI, isohybrid --uefi)"
-echo "Mirrored: $ROOT/build/helixos-live.iso"

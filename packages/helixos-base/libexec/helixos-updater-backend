@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+set -euo pipefail
+# helixos-updater-backend — privileged half of HelixOS Updater. Headless by
+# design (no GUI calls: Wayland-safe under pkexec). The Qt GUI calls these
+# verbs; each prints machine-simple output and exits 0/1.
+APP_SOURCES=/etc/helixos/updater.sources
+APT_VIEW=/etc/apt/sources.list.d/helixos.sources
+KEYRING=/usr/share/keyrings/helixos-archive-keyring.asc
+REBOOT_FLAG=/var/run/helixos-reboot-required
+
+[ "$(id -u)" -eq 0 ] || { echo "E: backend needs root (run via pkexec)" >&2; exit 1; }
+
+hide_repo() {
+  rm -f "$APT_VIEW" /var/lib/apt/lists/*helixos* /var/lib/apt/lists/*alpha-dev-studio* 2>/dev/null || true
+}
+
+case "${1:-}" in
+  __enable)
+    [ -f "$KEYRING" ] || { echo "E: missing $KEYRING — reinstall helixos-base" >&2; exit 1; }
+    install -d -m755 /etc/helixos
+    SUITE="$(lsb_release -cs 2>/dev/null || awk -F= '/VERSION_CODENAME/{print $2}' /etc/os-release)"
+    printf 'Types: deb\nURIs: https://alpha-dev-studio.github.io/HelixOS\nSuites: %s\nComponents: main\nArchitectures: amd64\nSigned-By: %s\n' "$SUITE" "$KEYRING" > "$APP_SOURCES"
+    chmod 644 "$APP_SOURCES"
+    echo "OK enabled"
+    ;;
+  __list)
+    trap hide_repo EXIT
+    [ -f "$APP_SOURCES" ] || { echo "E: not enabled" >&2; exit 2; }
+    cp -f "$APP_SOURCES" "$APT_VIEW"
+    apt-get update 2>&1 || true
+    apt list --upgradable 2>/dev/null | grep -E '^helixos' || true
+    hide_repo
+    ;;
+  __install)
+    trap hide_repo EXIT
+    [ -f "$APP_SOURCES" ] || { echo "E: not enabled" >&2; exit 2; }
+    cp -f "$APP_SOURCES" "$APT_VIEW"
+    apt-get update 2>&1 || true
+    # shellcheck disable=SC2207
+    PKGS=($(apt list --upgradable 2>/dev/null | grep -oE '^helixos[^/]*' || true))
+    if [ "${#PKGS[@]}" -eq 0 ]; then
+      echo "OK nothing-to-install"
+    else
+      apt-get install --only-upgrade -y "${PKGS[@]}"
+      echo "OK installed: ${PKGS[*]}"
+      if [ -f /var/run/reboot-required ]; then
+        touch "$REBOOT_FLAG"
+        echo "REBOOT required"
+      fi
+    fi
+    hide_repo
+    ;;
+  __needs-reboot)
+    [ -f "$REBOOT_FLAG" ] || [ -f /var/run/reboot-required ] && echo YES || echo NO
+    ;;
+  *)
+    echo "Usage: helixos-updater-backend [__enable|__list|__install|__needs-reboot]" >&2
+    exit 2
+    ;;
+esac

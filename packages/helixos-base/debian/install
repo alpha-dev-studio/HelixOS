@@ -1,1 +1,9 @@
 helixos-release etc/helixos-release
+usr/bin/helixos-updater usr/bin/
+libexec/helixos-updater-backend usr/libexec/
+share/applications/helixos-updater.desktop usr/share/applications/
+keyring/helixos-archive-keyring.asc usr/share/keyrings/
+polkit/49-helixos-updater.rules etc/polkit-1/rules.d/
+# NOTE: keyring copy duplicates helixos-repo-pub.asc at repo root on purpose
+# (debian/install cannot reference outside the package dir). If the repo key
+# ever rotates, update BOTH copies.

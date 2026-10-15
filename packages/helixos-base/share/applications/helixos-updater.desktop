@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=HelixOS Updater
+Comment=System updates for HelixOS
+Exec=helixos-updater
+Icon=system-software-update
+Terminal=false
+Type=Application
+Categories=System;

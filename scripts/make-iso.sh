@@ -8,7 +8,7 @@ CONF="$ROOT/configs/desktop"
 SHELLCONF="$ROOT/configs/helix-shell"
 
 sudo apt-get update
-sudo apt-get install -y live-build debootstrap debian-archive-keyring cpio xorriso isolinux syslinux-efi syslinux-utils grub-efi-amd64-bin squashfs-tools imagemagick
+sudo apt-get install -y live-build debootstrap debian-archive-keyring cpio xorriso isolinux syslinux-efi syslinux-utils grub-efi-amd64-bin squashfs-tools imagemagick debhelper build-essential
 
 # Patch noble's old live-build: trixie moved Contents indices per-component
 # (dists/trixie/main/Contents-*.gz), scripts still fetch suite-level path (404).
@@ -18,6 +18,14 @@ for LBFIX in /usr/lib/live/build/lb_chroot_linux-image /usr/lib/live/build/lb_bi
     echo "Patched $LBFIX for per-component Contents."
   fi
 done
+# Patch chroot deconfigure: live-build blindly deletes chroot/usr/sbin/start-stop-daemon
+# AFTER our hook restores the real binary (same file via usrmerge), shipping every
+# ISO without it -> Calamares target fails apt code 100. Only remove the fake.
+DPKGDEL=/usr/lib/live/build/lb_chroot_dpkg
+if grep -q 'rm -f chroot/usr/sbin/start-stop-daemon$' "$DPKGDEL" 2>/dev/null; then
+  sudo sed -i 's|rm -f chroot/usr/sbin/start-stop-daemon$|if [ "$(readlink chroot/usr/sbin/start-stop-daemon 2>/dev/null)" = "/bin/true" ]; then rm -f chroot/usr/sbin/start-stop-daemon; fi|' "$DPKGDEL"
+  echo "Patched $DPKGDEL to preserve restored start-stop-daemon."
+fi
 # Patch debian-installer integration: drops 2006-era lilo/bare-grub/linux-image-2.6 names
 DIFIX=/usr/lib/live/build/lb_binary_debian-installer
 if grep -q 'DI_REQ_PACKAGES=' "$DIFIX" 2>/dev/null; then
@@ -26,7 +34,9 @@ if grep -q 'DI_REQ_PACKAGES=' "$DIFIX" 2>/dev/null; then
 fi
 
 # Cached builds by default: reuse ~/helixos-iso (debootstrap + debs stay cached).
-# Pass --clean for a from-scratch build.
+# Flags: --clean = from-scratch (wipes everything, hours). --full = repack the
+#   binary tree too (needed when chroot content changed). Plain run = fastest,
+#   skips mksquashfs when nothing in the chroot changed (ISO/EFI/grub iterations).
 if [ "${1:-}" = "--clean" ]; then
   sudo rm -rf "$LB_DIR"
 fi
@@ -53,8 +63,27 @@ lb config \
   --iso-volume HelixOS \
   --source false \
   --win32-loader false \
-  --bootappend-live "boot=live components username=helix quiet"
+  --bootappend-live "boot=live components username=helix quiet splash"
 
+# Bake helixos-* debs into the image from LOCAL source (so first boot is already
+# converged — no apt-install dance for users). DrvFs-safe: build on ext4 tmp.
+# Built debs land in includes.chroot/tmp and a late chroot hook dpkg-installs
+# them (postinst no-ops safely in-image: helix is the only user, so it's kept).
+DEBTMP="$(mktemp -d /tmp/helixos-img-debs-XXXX)"
+for _pkgdir in "$ROOT"/packages/*/; do
+  [ -f "$_pkgdir/debian/control" ] || continue
+  _pkg="$(basename "$_pkgdir")"
+  _work="$DEBTMP/$_pkg"
+  rm -rf "$_work"; cp -a "$_pkgdir" "$_work"
+  chmod +x "$_work/debian/rules"
+  chmod -x "$_work/debian/install" "$_work/debian/control" "$_work/debian/changelog" 2>/dev/null || true
+  rm -rf "$_work/debian/.debhelper" "$_work/debian/$_pkg" "$_work/debian/debhelper-build-stamp" 2>/dev/null || true
+  (cd "$_work" && dpkg-buildpackage -us -uc -b) || echo "WARNING: $_pkg failed to build — image ships without it"
+done
+mkdir -p config/includes.chroot/tmp/helixos-debs
+rm -f config/includes.chroot/tmp/helixos-debs/*.deb
+cp -vf "$DEBTMP"/*.deb config/includes.chroot/tmp/helixos-debs/ 2>/dev/null || echo "WARNING: no helixos debs built"
+rm -rf "$DEBTMP"
 # HelixOS package set: full desktop — settings, panel/taskbar, kickoff start menu,
 # system tray, konsole terminal, systemmonitor task manager, discover store, plymouth boot splash
 mkdir -p config/package-lists
@@ -82,6 +111,7 @@ plymouth-themes
 unattended-upgrades
 packagekit
 packagekit-tools
+pkexec
 # Every hardware driver/firmware Debian trixie ships (nothing custom — kernel
 # drivers already ride in linux-image; these are the binary blobs). Covers
 # Intel/AMD/NVIDIA GPUs, all wifi vendors, sound (SOF), bluetooth, NICs.
@@ -124,12 +154,23 @@ intel-microcode
 # step works with no network (target inherits them via unpackfs)
 grub-efi-amd64
 shim-signed
+# Market wins a solo dev can ship: laptop power (PPD integrates with Plasma),
+# one sane app story (Flatpak + Discover backend), fingerprint readers.
+power-profiles-daemon
+flatpak
+plasma-discover-backend-flatpak
+python3-pyqt6
+fprintd
+libpam-fprintd
+# Rollback engine: btrfs snapshots around every upgrade (openSUSE model).
+# NOTE: grub-btrfs is NOT a Debian package (upstream-only) — snapshots restore
+# via live USB + btrfs set-default until the GRUB-menu step is vendored+tested.
+snapper
+btrfs-progs
+# Tier 3 OTA engine (dormant until slot layout ships — see docs/OTA.md)
+rauc
 fonts-noto-core
 fonts-hack
-labwc
-foot
-thunar
-mousepad
 grim
 slurp
 wl-clipboard
@@ -155,22 +196,41 @@ mkdir -p config/includes.chroot/etc \
 cp "$SHELLCONF/kdeglobals-locked" config/includes.chroot/etc/xdg/kdeglobals
 echo "HelixOS 1.0 \"Surge\" (Debian 13 trixie)" > config/includes.chroot/etc/helixos-release
 echo "helix" > config/includes.chroot/etc/hostname
-# HelixOS OTA repo client — only wired when pubkey exists AND repo is published.
-# (gpg --armor --export you@mail > helixos-repo-pub.asc in repo root). Secret keys NEVER ship.
-if [ -f "$ROOT/helixos-repo-pub.asc" ]; then
-  mkdir -p config/includes.chroot/usr/share/keyrings config/includes.chroot/etc/apt/sources.list.d
-  cp "$ROOT/helixos-repo-pub.asc" config/includes.chroot/usr/share/keyrings/helixos-archive-keyring.asc
-  GH_USER="${GH_USER:-alpha-dev-studio}"
-  REPO_URL="https://${GH_USER}.github.io/HelixOS"
-  if curl -fs HEAD "${REPO_URL}/dists/trixie/Release" >/dev/null 2>&1 || curl -fs "${REPO_URL}/dists/trixie/Release" >/dev/null 2>&1; then
-    printf 'Types: deb\nURIs: %s\nSuites: trixie\nComponents: main\nArchitectures: amd64\nSigned-By: /usr/share/keyrings/helixos-archive-keyring.asc\n' "$REPO_URL" > config/includes.chroot/etc/apt/sources.list.d/helixos.sources
-    echo "OTA repo client wired ($REPO_URL)."
-  else
-    rm -f config/includes.chroot/etc/apt/sources.list.d/helixos.sources
-    echo "WARNING: OTA repo $REPO_URL not published yet — building without HelixOS repo (Debian only)."
-  fi
-fi
+printf '127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.1.1 helix\n' > config/includes.chroot/etc/hosts
+# Architecture rule: apt + Discover see Debian ONLY. The HelixOS repo lives
+# exclusively inside the HelixOS Updater app (it enables the source for the
+# duration of its own refresh/install, then removes it). No helixos.* file may
+# ever be written to sources.list.d here — that separation is the whole point.
 printf '[Theme]\nCurrent=breeze\n' > config/includes.chroot/etc/sddm.conf.d/helixos.conf
+# Tier 2 OTA: security updates install themselves overnight, everything else
+# shows up in Discover. Without this file the package alone does nothing.
+mkdir -p config/includes.chroot/etc/apt/apt.conf.d
+cat > config/includes.chroot/etc/apt/apt.conf.d/20helixos-auto-upgrades <<'APT'
+APT::Periodic::Update-Package-Lists "1";
+APT::Periodic::Unattended-Upgrade "1";
+APT::Periodic::AutocleanInterval "7";
+APT
+# Rollback wiring: snapshot the root subvolume before/after every apt run.
+# A broken update = reboot, pick the pre-upgrade snapshot in GRUB, done.
+cat > config/includes.chroot/etc/apt/apt.conf.d/80helixos-snapshots <<'SNAPAPT'
+DPkg::Pre-Invoke {"SNAPPER_NUMBER=$(/usr/bin/snapper create --type pre --cleanup-algorithm number --print-number --description 'apt' 2>/dev/null); echo $SNAPPER_NUMBER > /var/run/snapper-apt.number || true";};
+DPkg::Post-Invoke {"if [ -f /var/run/snapper-apt.number ]; then /usr/bin/snapper create --type post --pre-number=$(cat /var/run/snapper-apt.number) --cleanup-algorithm number --description 'apt' 2>/dev/null || true; rm -f /var/run/snapper-apt.number; fi";};
+SNAPAPT
+# Default snapper root config (numbered pre/post pairs, keep last 10).
+mkdir -p config/includes.chroot/etc/snapper/configs
+cat > config/includes.chroot/etc/snapper/configs/root <<'SNAPCFG'
+SUBVOLUME="/"
+FSTYPE="btrfs"
+NUMBER_CLEANUP="yes"
+NUMBER_MIN_AGE="1800"
+NUMBER_LIMIT="10"
+TIMELINE_CREATE="no"
+EMPTY_PRE_POST_CLEANUP="yes"
+EMPTY_PRE_POST_MIN_AGE="1800"
+SNAPCFG
+# Tier 3 OTA: A/B image updater present from day one (slot layout + server
+# bundles land with the fleet design in docs/OTA.md).
+# (rauc package itself added to the list below.)
 # Install-to-disk desktop icon for the live session (stock look: system icon,
 # stock Debian setup branding — zero Helix artwork anywhere)
 mkdir -p config/includes.chroot/etc/skel/Desktop config/includes.chroot/usr/share/applications
@@ -191,6 +251,40 @@ cp config/includes.chroot/usr/share/applications/helixos-install.desktop config/
 mkdir -p config/includes.chroot/usr/bin
 cp "$ROOT/configs/calamares/helixos-refind-install.sh" config/includes.chroot/usr/bin/helixos-refind-install
 chmod +x config/includes.chroot/usr/bin/helixos-refind-install
+# Rescue stick tool: lives in the app menu (NOT the desktop — one icon rule),
+# refuses to touch the live system itself, operates on installed HelixOS roots.
+cp "$ROOT/configs/rescue/helixos-rescue.sh" config/includes.chroot/usr/bin/helixos-rescue
+chmod +x config/includes.chroot/usr/bin/helixos-rescue
+cat > config/includes.chroot/usr/share/applications/helixos-rescue.desktop <<'DESK'
+[Desktop Entry]
+Name=HelixOS Rescue
+Comment=Repair or update an installed HelixOS from USB
+Exec=pkexec /usr/bin/helixos-rescue
+Icon=system-software-install
+Terminal=true
+Type=Application
+Categories=System;
+NoDisplay=false
+DESK
+# Recovery boot plumbing: the "HelixOS Recovery" entries pass helixos-recovery
+# on the kernel cmdline; this autostart wrapper opens Rescue on login, and
+# no-ops everywhere else (including installed systems).
+mkdir -p config/includes.chroot/etc/xdg/autostart
+cat > config/includes.chroot/usr/bin/helixos-recovery-autostart <<'WRAP'
+#!/bin/sh
+grep -q 'helixos-recovery' /proc/cmdline || exit 0
+exec konsole -e /usr/bin/helixos-rescue
+WRAP
+chmod +x config/includes.chroot/usr/bin/helixos-recovery-autostart
+cat > config/includes.chroot/etc/xdg/autostart/helixos-recovery.desktop <<'DESK'
+[Desktop Entry]
+Name=HelixOS Recovery
+Exec=/usr/bin/helixos-recovery-autostart
+Terminal=false
+Type=Application
+NoDisplay=true
+X-GNOME-Autostart-enabled=true
+DESK
 mkdir -p config/includes.chroot/etc/calamares/modules
 cat > config/includes.chroot/etc/calamares/modules/shellprocess_helix-refind.conf <<'YML'
 ---
@@ -199,55 +293,129 @@ timeout: 300
 script:
     - command: ["/usr/bin/helixos-refind-install"]
 YML
+# Post-install cleanup runs INSIDE the target (default chrooted): drops the
+# live helix user once a real account exists, so login shows one user only.
+cp "$ROOT/configs/calamares/helixos-finish-install.sh" config/includes.chroot/usr/bin/helixos-finish-install
+chmod +x config/includes.chroot/usr/bin/helixos-finish-install
+cat > config/includes.chroot/etc/calamares/modules/shellprocess_helix-finish.conf <<'YML'
+---
+dontChroot: false
+timeout: 120
+script:
+    - command: ["/usr/bin/helixos-finish-install"]
+YML
 # HelixOS GRUB menu (UEFI, 10s timeout) — binary includes land after the
 # generated grub stages, so ours wins. EFI-embedded stub chainloads /boot/grub.
 # (No theme: plain GRUB menu until new artwork lands.)
 mkdir -p config/includes.binary/boot/grub
 cp "$ROOT/configs/grub/grub.cfg" config/includes.binary/boot/grub/grub.cfg
-# NOTE: Plymouth theme intentionally NOT shipped (boot splash stays stock).
+# Purge stale GRUB theme (logo background.png resurrected from old runs even
+# though the source file is deleted — plain GRUB menu only, no boot images)
+rm -rf config/includes.binary/boot/grub/themes 2>/dev/null || true
+# Blank the bgrt fallback image: on boards without firmware logo data the plugin
+# shows bgrt-fallback.png — Debian bakes its swirl into it (your photo). A blank
+# pixel draws nothing. Still zero visible boot images; invisible by design.
+mkdir -p config/includes.chroot/usr/share/plymouth/themes/bgrt
+convert -size 1x1 xc:none config/includes.chroot/usr/share/plymouth/themes/bgrt/bgrt-fallback.png 2>/dev/null || true
+# Boot splash, exactly per spec: NO shipped images. Stock bgrt theme shows the
+# firmware (motherboard) logo + spinner wheel, Ubuntu-style. A oneshot service
+# captions "HelixOS" under the wheel via the Plymouth message channel.
 # hooks live FLAT in config/hooks/ (live-build ignores subdirectories)
 mkdir -p config/hooks
-# Plymouth default reset: earlier builds set helixos theme inside the persistent
-# chroot — that setting survives file purges, so point it back at stock explicitly.
-cat > config/hooks/0099-helixos-plymouth-reset.hook.chroot <<'HOOK'
+rm -f config/hooks/0099-helixos-plymouth-reset.hook.chroot
+cat > config/hooks/0099-helixos-plymouth-bgrt.hook.chroot <<'HOOK'
 #!/bin/sh
-plymouth-set-default-theme spinner 2>/dev/null || plymouth-set-default-theme text 2>/dev/null || true
+plymouth-set-default-theme bgrt 2>/dev/null || plymouth-set-default-theme spinner 2>/dev/null || true
 HOOK
-chmod +x config/hooks/0099-helixos-plymouth-reset.hook.chroot
-# Setup sequencer patch: run the rEFInd dual-boot job right after the stock
-# bootloader step. Guarded six ways — any mismatch skips silently (stock setup).
+chmod +x config/hooks/0099-helixos-plymouth-bgrt.hook.chroot
+# HelixOS identity: every generic Debian branding becomes HelixOS. os-release
+# is what splash messages, Settings About, and tools read — ID_LIKE=debian
+# keeps third-party scripts working while NAME says HelixOS everywhere.
+cat > config/hooks/0099-helixos-branding.hook.chroot <<'HOOK'
+#!/bin/sh
+cat > /etc/os-release <<'OSR'
+NAME="HelixOS"
+PRETTY_NAME="HelixOS 1.0 Surge"
+ID=helixos
+ID_LIKE=debian
+VERSION="1.0 (Surge)"
+VERSION_ID="1.0"
+VERSION_CODENAME=trixie
+DEBIAN_CODENAME=trixie
+ANSI_COLOR="0;36"
+HOME_URL="https://alpha-dev-studio.github.io/HelixOS-Web/"
+SUPPORT_URL="https://github.com/alpha-dev-studio/HelixOS/issues"
+BUG_REPORT_URL="https://github.com/alpha-dev-studio/HelixOS/issues"
+OSR
+cat > /etc/issue <<'ISSUE'
+HelixOS 1.0 "Surge" \n \l
+
+ISSUE
+printf 'HelixOS 1.0 (Surge)\n' > /etc/issue.net
+cat > /etc/lsb-release <<'LSB'
+DISTRIB_ID=HelixOS
+DISTRIB_RELEASE=1.0
+DISTRIB_CODENAME=surge
+DISTRIB_DESCRIPTION="HelixOS 1.0 Surge"
+LSB
+# Rebuild initramfs AFTER branding: the early splash is baked at kernel-install
+# time, so without this boot shows the stale spinner+Debian watermark from
+# initramfs while the real root says HelixOS. This is what your photo caught.
+update-initramfs -u -k all 2>&1 | tail -n3 || true
+HOOK
+chmod +x config/hooks/0099-helixos-branding.hook.chroot
+mkdir -p config/includes.chroot/etc/systemd/system
+cat > config/includes.chroot/etc/systemd/system/helixos-boot-caption.service <<'UNIT'
+[Unit]
+Description=HelixOS boot caption under the spinner wheel
+DefaultDependencies=no
+After=plymouth-start.service
+Before=plymouth-quit.service
+
+[Service]
+Type=oneshot
+ExecStart=/bin/sh -c '/usr/bin/plymouth display-message --text=HelixOS || true'
+
+[Install]
+WantedBy=sysinit.target
+UNIT
+cat > config/hooks/0099-helixos-caption-enable.hook.chroot <<'HOOK'
+#!/bin/sh
+systemctl enable helixos-boot-caption 2>/dev/null || true
+HOOK
+chmod +x config/hooks/0099-helixos-caption-enable.hook.chroot
+# Setup sequencer patch: run the rEFInd dual-boot job + the finish job
+# (live-user cleanup, in-target) right after the stock bootloader step.
+# Guarded — any mismatch skips silently (stock setup).
 cat > config/hooks/0099-helixos-calamares-refind.hook.chroot <<'HOOK'
 #!/bin/sh
 python3 - <<'PYEOF' || true
-import shutil
+import os, shutil
 p = '/etc/calamares/settings.conf'
-job = '/etc/calamares/modules/shellprocess_helix-refind.conf'
+jobs = {
+    '/etc/calamares/modules/shellprocess_helix-refind.conf': 'shellprocess@helix-refind',
+    '/etc/calamares/modules/shellprocess_helix-finish.conf': 'shellprocess@helix-finish',
+}
 try:
     src = open(p).read().splitlines(keepends=True)
-    have_job = False
-    try:
-        open(job).close()
-        have_job = True
-    except OSError:
-        have_job = False
-    hits = [i for i, l in enumerate(src) if l.strip() == '- bootloader']
-    # repair: drop any previous helix-refind lines (incl. wrong-indent ones that
+    have = {tag: os.path.exists(job) for job, tag in jobs.items()}
+    # repair: drop any previous helix lines (incl. wrong-indent ones that
     # Calamares reads as "bootloader-shellprocess@helix-refind")
-    src = [l for l in src if 'helix-refind' not in l]
+    src = [l for l in src if 'helix-refind' not in l and 'helix-finish' not in l]
     hits = [i for i, l in enumerate(src) if l.strip() == '- bootloader']
-    if have_job and len(hits) == 1:
+    if all(have.values()) and len(hits) == 1:
         shutil.copyfile(p, p + '.helixos-bak')
         src.insert(hits[0] + 1, '  - shellprocess@helix-refind\n')
+        src.insert(hits[0] + 2, '  - shellprocess@helix-finish\n')
         open(p, 'w').writelines(src)
-        print('helix-refind job sequenced after bootloader')
+        print('helix jobs sequenced after bootloader')
     else:
-        print('helix-refind sequencing skipped (layout differs)')
+        print('helix sequencing skipped (layout differs)')
 except Exception as e:
-    print('helix-refind sequencing skipped:', e)
+    print('helix sequencing skipped:', e)
 PYEOF
 HOOK
 chmod +x config/hooks/0099-helixos-calamares-refind.hook.chroot
-# (No Plymouth enable hook: stock splash until new artwork lands.)
 # Live user helix: pre-created, EMPTY password, passwordless sudo.
 # (live-config reuses the existing account at boot instead of inventing one.)
 cat > config/hooks/0099-helixos-liveuser.hook.chroot <<'HOOK'
@@ -259,8 +427,78 @@ printf 'helix ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/helix-live
 chmod 440 /etc/sudoers.d/helix-live
 HOOK
 chmod +x config/hooks/0099-helixos-liveuser.hook.chroot
+# Install the baked helixos-* debs late in the chroot (after the live user
+# exists, so postinst keeps it). Loud on failure — a silently unconverged
+# image is worse than a red build.
+cat > config/hooks/0099-helixos-local-debs.hook.chroot <<'HOOK'
+#!/bin/sh
+if ls /tmp/helixos-debs/*.deb >/dev/null 2>&1; then
+  dpkg -i /tmp/helixos-debs/*.deb
+  rm -rf /tmp/helixos-debs
+fi
+HOOK
+chmod +x config/hooks/0099-helixos-local-debs.hook.chroot
+# No fallback window managers ship: one desktop (Plasma), one of every app.
+# A second session previously stole the SDDM default and stranded new installs
+# on a blank desktop — that class of bug is gone by construction now.# Restore real start-stop-daemon: live-build diverts it in chroot and the fake
+# leaks (or vanishes) into the squashfs — then every dpkg run in Calamares'
+# target fails with apt code 100. ENFORCED: three fallbacks run, and the build
+# DIES LOUDLY rather than packing another broken ISO. Belt-and-suspenders
+# symlink into /usr/bin covers Calamares runs with sbin stripped from PATH.
+cat > config/hooks/0099-helixos-dpkg-restore.hook.chroot <<'HOOK'
+#!/bin/sh
+# ENFORCED: a fake/missing start-stop-daemon ships a broken ISO (Calamares
+# target fails apt code 100). NOTE: plain -x checks LIE here — the fake is a
+# symlink to /bin/true, which is executable. Only a real binary counts.
+is_real_ssd() {
+  for f in /sbin/start-stop-daemon /usr/sbin/start-stop-daemon; do
+    if [ -x "$f" ]; then
+      case "$(readlink -f "$f")" in
+        /bin/true|/usr/bin/true) ;;
+        *) return 0 ;;
+      esac
+    fi
+  done
+  return 1
+}
+dpkg-divert --remove --rename /sbin/start-stop-daemon 2>/dev/null || true
+dpkg-divert --remove --rename /usr/sbin/start-stop-daemon 2>/dev/null || true
+if ! is_real_ssd; then
+  echo "start-stop-daemon fake or missing — reinstalling dpkg"
+  apt-get update 2>&1 | tail -n1 || true
+  apt-get install --reinstall -y dpkg 2>&1 | tail -n2 || true
+fi
+if ! is_real_ssd; then
+  echo "apt reinstall failed — extracting from cached dpkg deb (no network needed)"
+  DEB="$(ls -t /var/cache/apt/archives/dpkg_*.deb 2>/dev/null | head -n1)"
+  if [ -n "$DEB" ]; then
+    dpkg-deb --fsys-tarfile "$DEB" | tar -x -C / ./sbin/start-stop-daemon ./usr/sbin/start-stop-daemon 2>/dev/null || true
+  fi
+fi
+ln -sf /sbin/start-stop-daemon /usr/bin/start-stop-daemon 2>/dev/null || true
+[ -x /usr/sbin/start-stop-daemon ] && ln -sf /usr/sbin/start-stop-daemon /usr/bin/start-stop-daemon || true
+ls -la /sbin/start-stop-daemon /usr/sbin/start-stop-daemon /usr/bin/start-stop-daemon || true
+if ! is_real_ssd; then
+  echo "FATAL: start-stop-daemon still fake/missing — refusing to pack a broken ISO"
+  exit 1
+fi
+HOOK
+chmod +x config/hooks/0099-helixos-dpkg-restore.hook.chroot
+# Purge the redundant Debian installer: removed from the package list long ago,
+# but the persistent chroot keeps reinstalling it (hence the second desktop icon).
+cat > config/hooks/0099-helixos-purge-di.hook.chroot <<'HOOK'
+#!/bin/sh
+apt-get purge -y debian-installer-launcher 2>&1 | tail -n2 || true
+# One installer icon survives: ours. The stock Calamares one (whatever filename
+# the package version ships) must never reach the desktop.
+rm -f /etc/skel/Desktop/install-debian.desktop /usr/share/applications/install-debian.desktop /usr/share/applications/calamares-install-debian.desktop 2>/dev/null || true
+HOOK
+chmod +x config/hooks/0099-helixos-purge-di.hook.chroot
 # binary hook: populate isolinux dir with trixie syslinux modules (old live-build
-# only copies the theme, leaving ldlinux.c32 et al behind -> "Failed to load ldlinux.c32")
+# only copies the theme, leaving ldlinux.c32 et al behind -> "Failed to load ldlinux.c32").
+# CRITICAL: isolinux.bin itself must come from the SAME chroot package — the old
+# theme symlink pulled the host's build, and the version skew is what killed
+# vesamenu (COM32 load failure) and forced the direct-boot hack. Unified now.
 cat > config/hooks/0099-helixos-syslinux-modules.hook.binary <<'HOOK'
 #!/bin/sh
 set -e
@@ -269,6 +507,8 @@ for m in ldlinux.c32 libcom32.c32 libutil.c32 libmenu.c32 libgpl.c32 vesamenu.c3
   f="$(find chroot/usr/lib/syslinux chroot/usr/lib/ISOLINUX -name "$m" 2>/dev/null | head -n1)"
   if [ -n "$f" ]; then cp -v "$f" binary/isolinux/; else echo "WARNING: $m not found in chroot"; fi
 done
+ISOBIN="$(find chroot/usr/lib/ISOLINUX -name 'isolinux.bin' 2>/dev/null | head -n1)"
+if [ -n "$ISOBIN" ]; then cp -v "$ISOBIN" binary/isolinux/isolinux.bin; else echo "WARNING: isolinux.bin not found in chroot"; fi
 HOOK
 chmod +x config/hooks/0099-helixos-syslinux-modules.hook.binary
 # rEFInd dual-boot picker on the USB: binaries from the live system, HelixOS-first
@@ -292,7 +532,13 @@ menuentry "HelixOS Live" {
   volume HelixOS
   loader /live/vmlinuz
   initrd /live/initrd.img
-  options "boot=live config username=helix quiet"
+  options "boot=live config username=helix quiet splash"
+}
+menuentry "HelixOS Recovery" {
+  volume HelixOS
+  loader /live/vmlinuz
+  initrd /live/initrd.img
+  options "boot=live config username=helix quiet splash helixos-recovery"
 }
 CONF
 HOOK
@@ -327,7 +573,27 @@ if grep -q 'mv binary/live/vmlinuz-\* binary/live/vmlinuz$' "$SYSFIX" 2>/dev/nul
 fi
 # vesamenu.c32 fails to execute under QEMU SeaBIOS despite byte-valid modules —
 # boot straight into the live system instead (UEFI path uses grub menu anyway)
-printf 'default live-\nprompt 1\ntimeout 50\ninclude live.cfg\n' | sudo tee /usr/share/live/build/bootloaders/isolinux/isolinux.cfg > /dev/null
+# BIOS boot menu: Live Installer (default) + HelixOS Recovery. Possible now
+# that isolinux.bin and its modules are version-unified (see hook above).
+sudo tee /usr/share/live/build/bootloaders/isolinux/isolinux.cfg > /dev/null <<'ISOLINUX'
+UI vesamenu.c32
+MENU TITLE HelixOS 1.0 (Surge)
+TIMEOUT 100
+DEFAULT live
+LABEL live
+  MENU LABEL ^Live Installer
+  MENU DEFAULT
+  KERNEL /live/vmlinuz
+  APPEND initrd=/live/initrd.img boot=live config username=helix quiet splash
+LABEL recovery
+  MENU LABEL ^HelixOS Recovery
+  KERNEL /live/vmlinuz
+  APPEND initrd=/live/initrd.img boot=live config username=helix quiet splash helixos-recovery
+LABEL failsafe
+  MENU LABEL Live (failsafe)
+  KERNEL /live/vmlinuz
+  APPEND initrd=/live/initrd.img boot=live config username=helix memtest noapic noapm nodma nomce nolapic nomodeset nosmp nosplash vga=normal
+ISOLINUX
 # rsvg compat shim: trixie dropped /usr/bin/rsvg (only rsvg-convert remains),
 # but 2012 live-build calls: rsvg --format png --height H --width W IN OUT
 sudo mkdir -p chroot/usr/bin
@@ -346,13 +612,23 @@ done
 exec rsvg-convert --format "$format" --height "$height" --width "$width" --output "$output" "$input"
 RSVG_EOF
 sudo chmod +x chroot/usr/bin/rsvg
-# Binary tree goes stale across partial runs (stages stamp "done" while their
-# outputs are wiped or half-written) — full binary rebuild from intact chroot.
-# chroot/ + caches are kept, so no re-downloads; only squashfs repacks (~15 min).
-sudo rm -rf binary chroot/binary 2>/dev/null || true
-rm -f .build/binary_*
-# Remove dead hook subdirs from earlier runs (live-build only reads config/hooks/ flat)
+# Binary rebuild policy: FAST by default (resume — skips mksquashfs when the
+# chroot is untouched, so ISO/bootloader-only iterations take minutes).
+# Pass --full for the nuclear path (wipe binary tree + stamps, repack ~15 min).
+# Use --full for release builds. chroot/ + deb caches are kept either way.
+if [ "${1:-}" = "--full" ] || [ "${2:-}" = "--full" ]; then
+  echo "FULL binary rebuild requested."
+  sudo rm -rf binary chroot/binary 2>/dev/null || true
+  rm -f .build/binary_*
+fi
+# Remove dead hook subdirs + retired hook files from earlier runs (live-build
+# only reads config/hooks/ flat, and stale files keep executing forever)
 rm -rf config/hooks/live config/hooks/binary 2>/dev/null || true
+rm -f config/hooks/0099-helixos-plymouth.hook.chroot config/hooks/0099-helixos-plymouth-reset.hook.chroot 2>/dev/null || true
+# Stale HelixOS repo entries in config/archives (left by an old experiment)
+# re-inject into EVERY build's chroot apt without their keyring -> all chroot
+# apt updates fail "not signed". Our repo must never be in chroot apt.
+rm -f config/archives/helixos* 2>/dev/null || true
 # Purge retired Helix artwork from persistent config/includes.chroot AND chroot
 # (both persist across builds; includes only ADD, so stale files re-inject forever)
 sudo rm -rf chroot/usr/share/backgrounds/helixos-wallpaper.svg \

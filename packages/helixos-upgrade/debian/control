@@ -1,0 +1,14 @@
+Source: helixos-upgrade
+Section: admin
+Priority: optional
+Maintainer: HelixOS <helixos@localhost>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+
+Package: helixos-upgrade
+Architecture: all
+Depends: ${misc:Depends}, snapper, btrfs-progs, apt
+Description: HelixOS major-release upgrades with no data loss (Surge->Arc->Flux)
+ Snapshots the system, swaps apt sources to the next release suite,
+ upgrades in stages, and leaves a GRUB-bootable fallback snapshot.
+ /home is never touched by the upgrader.

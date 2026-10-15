@@ -1,0 +1,12 @@
+helixos-upgrade (1.0-2) trixie; urgency=medium
+
+  * Rollback instructions via live USB (no GRUB snapshot menu upstream).
+
+ -- HelixOS <helixos@localhost>  Thu, 15 Oct 2026 00:00:00 +0000
+
+helixos-upgrade (1.0-1) trixie; urgency=medium
+
+  * Major-release upgrade orchestrator: snapshot, swap suites, staged
+    full-upgrade, GRUB fallback. Surge->Arc path ready (Arc suite lands later).
+
+ -- HelixOS <helixos@localhost>  Tue, 14 Oct 2026 00:00:00 +0000

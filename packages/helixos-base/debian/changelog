@@ -1,3 +1,46 @@
+helixos-base (1.0-7) trixie; urgency=medium
+
+  * Updater: actually start the backend process (fixes forever-Working),
+    live log output, Cancel button, 10-minute watchdog, cleanup on kill.
+
+ -- HelixOS <helixos@localhost>  Thu, 15 Oct 2026 00:00:00 +0000
+
+helixos-base (1.0-6) trixie; urgency=medium
+
+  * Updater rewritten as a Qt app (dark HelixOS theme, progress, log view).
+  * Privilege split: GUI runs as user, headless backend via pkexec.
+
+ -- HelixOS <helixos@localhost>  Thu, 15 Oct 2026 00:00:00 +0000
+
+helixos-base (1.0-5) trixie; urgency=medium
+
+  * Updater passwordless for local admins (polkit rule, sudo untouched).
+  * Progress + result dialogs around installs (no more silence).
+
+ -- HelixOS <helixos@localhost>  Thu, 15 Oct 2026 00:00:00 +0000
+
+helixos-base (1.0-4) trixie; urgency=medium
+
+  * Updater: never fail silently (show the enable error), pre-check keyring,
+    neutral wording.
+
+ -- HelixOS <helixos@localhost>  Thu, 15 Oct 2026 00:00:00 +0000
+
+helixos-base (1.0-3) trixie; urgency=medium
+
+  * HelixOS Updater app: owns the HelixOS repo (temp-enable per transaction),
+    reboot handling included. apt/Discover return to Debian-only.
+  * Migration: legacy helixos.sources removed from apt on upgrade.
+
+ -- HelixOS <helixos@localhost>  Thu, 15 Oct 2026 00:00:00 +0000
+
+helixos-base (1.0-2) trixie; urgency=medium
+
+  * Converge installed systems: drop live helix user, Plasma-first login,
+    single installer icon.
+
+ -- HelixOS <helixos@localhost>  Thu, 15 Oct 2026 00:00:00 +0000
+
 helixos-base (1.0-1) trixie; urgency=medium
 
   * HelixOS 1.0 "Surge" base identity: release file and defaults.
