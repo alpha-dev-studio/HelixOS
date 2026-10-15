@@ -15,20 +15,37 @@ Description: HelixOS 1.0 Surge base identity files
  Release file, defaults and version plumbing for HelixOS.
  Future updates ship as new versions of this package (OTA via apt).
 
+Package: helixos-base
+Architecture: all
+Version: 1.0-2
+Priority: optional
+Section: admin
+Maintainer: HelixOS <helixos@localhost>
+Installed-Size: 13
+Filename: dists/trixie/main/binary-amd64/helixos-base_1.0-2_all.deb
+Size: 1740
+MD5sum: 393a789c69f291d72de7f9621703df72
+SHA1: 3a1aa6c274bf5707c12405167fc6dd49508e989f
+SHA256: 9a83e43af0ca64af8533a6747bd02e6eb640283aacada4f5a4b1e3e6f891c87b
+SHA512: df2b084fa605036ac137c2cb11b96ffdd603b6f0e759ba63014b847217a0e0aa8ff24a608136aee1f9400b33d36127213e89213b9c1de5d145011477c2a5037b
+Description: HelixOS 1.0 Surge base identity files
+ Release file, defaults and version plumbing for HelixOS.
+ Future updates ship as new versions of this package (OTA via apt).
+
 Package: helixos-upgrade
 Architecture: all
 Version: 1.0-1
 Priority: optional
 Section: admin
 Maintainer: HelixOS <helixos@localhost>
-Installed-Size: 11
+Installed-Size: 12
 Depends: snapper, btrfs-progs, apt
 Filename: dists/trixie/main/binary-amd64/helixos-upgrade_1.0-1_all.deb
-Size: 2536
-MD5sum: eed8998201ef3b8dc64829dd2f71ca74
-SHA1: d423f342a498d285c6bd8d57517beed646c88e61
-SHA256: 637fa63705a77f3be075d6e263e6e998c622138c404407fa47d1566cacd2bfb9
-SHA512: 516de56b77a48464d9b4cde549d4fd5f1d1b276ca9dd0f6d98a5ffadc150a3a37184b84a131aa3bc3b559d27f5967fcdce6832b56324dda5b8f1272abd1e079a
+Size: 2634
+MD5sum: 03bd52914837c98211483bf87db75c93
+SHA1: 7e38b704e2040fd14c33b22ac467f1a17bca6962
+SHA256: a32d8ed9d7056a8cacafe3b16e16fa271dc88774dda10061a2991643d2c4a915
+SHA512: d03c95a738da83c413c5cd893d722521fd28da1b093a991337619b12c00e281898ed6698fdd4901e53ff79512aa6e3a385762a3eaed12b41ba2dce9fb29457f3
 Description: HelixOS major-release upgrades with no data loss (Surge->Arc->Flux)
  Snapshots the system, swaps apt sources to the next release suite,
  upgrades in stages, and leaves a GRUB-bootable fallback snapshot.
