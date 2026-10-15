@@ -51,3 +51,22 @@ Description: HelixOS major-release upgrades with no data loss (Surge->Arc->Flux)
  upgrades in stages, and leaves a GRUB-bootable fallback snapshot.
  /home is never touched by the upgrader.
 
+Package: helixos-upgrade
+Architecture: all
+Version: 1.0-2
+Priority: optional
+Section: admin
+Maintainer: HelixOS <helixos@localhost>
+Installed-Size: 12
+Depends: snapper, btrfs-progs, apt
+Filename: dists/trixie/main/binary-amd64/helixos-upgrade_1.0-2_all.deb
+Size: 2718
+MD5sum: 574ec72edada6355318371a1cf537883
+SHA1: d0dc58dc31a0d3e3ec3a85531a0b63271d6b27a2
+SHA256: fe4d8919688e2c852d0e5bd8e1c86c64bd8c68964d18bed24cfbd43137bdf159
+SHA512: 0cd7d3a5c42a0b93c73f9d00460d2fcc5db8a1dd56186b0594dc93fa0c5a7cb11c6484a7caeafe97c788d846d6ac880917e6e3a5b6e7af4722d9afce9f6aeb6a
+Description: HelixOS major-release upgrades with no data loss (Surge->Arc->Flux)
+ Snapshots the system, swaps apt sources to the next release suite,
+ upgrades in stages, and leaves a GRUB-bootable fallback snapshot.
+ /home is never touched by the upgrader.
+
