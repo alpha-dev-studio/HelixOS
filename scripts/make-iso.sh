@@ -18,13 +18,23 @@ for LBFIX in /usr/lib/live/build/lb_chroot_linux-image /usr/lib/live/build/lb_bi
     echo "Patched $LBFIX for per-component Contents."
   fi
 done
-# Patch chroot deconfigure: live-build blindly deletes chroot/usr/sbin/start-stop-daemon
-# AFTER our hook restores the real binary (same file via usrmerge), shipping every
-# ISO without it -> Calamares target fails apt code 100. Only remove the fake.
+# Patch chroot deconfigure: teardown's dpkg-divert --remove --rename refuses to
+# land when the slot holds a different file (it only renames into an empty
+# slot) and the whole build runs under set -e -> exit 2. Since our hook lays
+# the real binary at the canonical path, the old symlink-only rm left the slot
+# occupied and killed every build. Clear the slot whenever .distrib exists to
+# receive the rename (teardown restores the pristine original) or the path is
+# still the fake symlink. Safe: the hook FATAL-checks a real binary first, so
+# this can never ship an ISO without one.
 DPKGDEL=/usr/lib/live/build/lb_chroot_dpkg
 if grep -q 'rm -f chroot/usr/sbin/start-stop-daemon$' "$DPKGDEL" 2>/dev/null; then
-  sudo sed -i 's|rm -f chroot/usr/sbin/start-stop-daemon$|if [ "$(readlink chroot/usr/sbin/start-stop-daemon 2>/dev/null)" = "/bin/true" ]; then rm -f chroot/usr/sbin/start-stop-daemon; fi|' "$DPKGDEL"
-  echo "Patched $DPKGDEL to preserve restored start-stop-daemon."
+  sudo sed -i 's#rm -f chroot/usr/sbin/start-stop-daemon$#if [ -f chroot/usr/sbin/start-stop-daemon.distrib ] || [ "$(readlink chroot/usr/sbin/start-stop-daemon 2>/dev/null)" = "/bin/true" ]; then rm -f chroot/usr/sbin/start-stop-daemon; fi#' "$DPKGDEL"
+  echo "Patched $DPKGDEL to clear the rename slot for start-stop-daemon."
+elif grep -q 'readlink chroot/usr/sbin/start-stop-daemon' "$DPKGDEL" 2>/dev/null; then
+  # Superseded first-generation patch (symlink-only rm) still present on this
+  # host from an earlier run — upgrade it in place.
+  sudo sed -i 's#if \[ "$(readlink chroot/usr/sbin/start-stop-daemon 2>/dev/null)" = "/bin/true" \]; then rm -f chroot/usr/sbin/start-stop-daemon; fi#if [ -f chroot/usr/sbin/start-stop-daemon.distrib ] || [ "$(readlink chroot/usr/sbin/start-stop-daemon 2>/dev/null)" = "/bin/true" ]; then rm -f chroot/usr/sbin/start-stop-daemon; fi#' "$DPKGDEL"
+  echo "Upgraded $DPKGDEL patch to clear the rename slot for start-stop-daemon."
 fi
 # Patch debian-installer integration: drops 2006-era lilo/bare-grub/linux-image-2.6 names
 DIFIX=/usr/lib/live/build/lb_binary_debian-installer
@@ -194,7 +204,8 @@ mkdir -p config/includes.chroot/etc \
   config/includes.chroot/etc/sddm.conf.d \
   config/includes.chroot/etc/xdg
 cp "$SHELLCONF/kdeglobals-locked" config/includes.chroot/etc/xdg/kdeglobals
-echo "HelixOS 1.0 \"Surge\" (Debian 13 trixie)" > config/includes.chroot/etc/helixos-release
+# NOTE: /etc/helixos-release is owned by the helixos-base deb (as a file).
+# Never write it here too — dual ownership tar-bombs lb_chroot_includes.
 echo "helix" > config/includes.chroot/etc/hostname
 printf '127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.1.1 helix\n' > config/includes.chroot/etc/hosts
 # Architecture rule: apt + Discover see Debian ONLY. The HelixOS repo lives
@@ -461,8 +472,12 @@ is_real_ssd() {
   done
   return 1
 }
-dpkg-divert --remove --rename /sbin/start-stop-daemon 2>/dev/null || true
-dpkg-divert --remove --rename /usr/sbin/start-stop-daemon 2>/dev/null || true
+# Do NOT dpkg-divert --remove here: live-build's teardown (lb_chroot_dpkg
+# remove, runs under set -e) owns those records, and on usrmerged trixie
+# (/sbin --> /usr/sbin, same file diverted twice — live-build bug #2122623)
+# an early removal makes its --remove --rename die with "rename involves
+# overwriting ... not allowed" and the whole build exits 2. Just lay the real
+# binary in place; teardown then renames .distrib back over identical content.
 if ! is_real_ssd; then
   echo "start-stop-daemon fake or missing — reinstalling dpkg"
   apt-get update 2>&1 | tail -n1 || true
@@ -474,6 +489,13 @@ if ! is_real_ssd; then
   if [ -n "$DEB" ]; then
     dpkg-deb --fsys-tarfile "$DEB" | tar -x -C / ./sbin/start-stop-daemon ./usr/sbin/start-stop-daemon 2>/dev/null || true
   fi
+fi
+# Keep teardown's rename safe: .distrib must match what we laid down, or its
+# content check refuses the rename and the build exits 2 (same bug as above).
+if is_real_ssd; then
+  for _d in /usr/sbin/start-stop-daemon.distrib /sbin/start-stop-daemon.distrib.usr-is-merged; do
+    [ -f "$_d" ] && cp -f /usr/sbin/start-stop-daemon "$_d" 2>/dev/null || true
+  done
 fi
 ln -sf /sbin/start-stop-daemon /usr/bin/start-stop-daemon 2>/dev/null || true
 [ -x /usr/sbin/start-stop-daemon ] && ln -sf /usr/sbin/start-stop-daemon /usr/bin/start-stop-daemon || true
@@ -625,6 +647,19 @@ fi
 # only reads config/hooks/ flat, and stale files keep executing forever)
 rm -rf config/hooks/live config/hooks/binary 2>/dev/null || true
 rm -f config/hooks/0099-helixos-plymouth.hook.chroot config/hooks/0099-helixos-plymouth-reset.hook.chroot 2>/dev/null || true
+# Stale landmines in the persistent tree (each aborts lb_chroot_includes with a
+# tar error or poisons chroot apt):
+# - config/includes.chroot/etc/apt/sources.list.d/helixos.* (old experiment;
+#   our repo must never be in chroot apt — the Updater owns it at runtime)
+rm -f config/includes.chroot/etc/apt/sources.list.d/helixos.* 2>/dev/null || true
+# Stale single-owner violation: the helixos-base deb owns /etc/helixos-release
+# as a file, but old runs left a copy here that tar-bombs file-on-dir flips.
+rm -f config/includes.chroot/etc/helixos-release 2>/dev/null || true
+# - chroot/etc/helixos-release as a DIRECTORY (old packaging); the deb owns
+#   this path as a file now, and tar refuses to overlay file-on-dir.
+sudo rm -rf chroot/etc/helixos-release 2>/dev/null || true
+# - chroot /tmp without the sticky bit breaks apt signature checks (_apt sandbox)
+sudo mkdir -p chroot/tmp && sudo chmod 1777 chroot/tmp 2>/dev/null || true
 # Stale HelixOS repo entries in config/archives (left by an old experiment)
 # re-inject into EVERY build's chroot apt without their keyring -> all chroot
 # apt updates fail "not signed". Our repo must never be in chroot apt.
