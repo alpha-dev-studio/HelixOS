@@ -66,6 +66,23 @@ Description: HelixOS 1.0 Surge base identity files
  Release file, defaults and version plumbing for HelixOS.
  Future updates ship as new versions of this package (OTA via apt).
 
+Package: helixos-base
+Architecture: all
+Version: 1.0-5
+Priority: optional
+Section: admin
+Maintainer: HelixOS <helixos@localhost>
+Installed-Size: 29
+Filename: dists/trixie/main/binary-amd64/helixos-base_1.0-5_all.deb
+Size: 7452
+MD5sum: d6615112de4da9ad09fc1e038b9b28d8
+SHA1: 972d4844f39f56fa3aa496a1e99e9b1a7b395ac6
+SHA256: e9e009f850063a956963b6d2172546251041dd9810523361e890138b62a785eb
+SHA512: f1280cc538087f69c23ab56bf7a6e45cdeb11560347eee7fcd043bebb98d8b2c047b61d1ad363be09804fb511c21c57d0e9da77d0bf3f4570e6e90f096d102cd
+Description: HelixOS 1.0 Surge base identity files
+ Release file, defaults and version plumbing for HelixOS.
+ Future updates ship as new versions of this package (OTA via apt).
+
 Package: helixos-upgrade
 Architecture: all
 Version: 1.0-1
