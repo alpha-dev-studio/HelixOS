@@ -1,18 +1,22 @@
 # HelixOS 1.0 “Surge”
 
 HelixOS is a usable desktop OS built on Debian 13 “trixie” — tuned for
-older and low-RAM machines (4 GB first, everything else after). Plasma
-desktop, Debian package universe, Calamares guided setup and a dual-boot friendly bootloader story out of the box.
+older and low-RAM machines (4 GB first, everything else after). Its own
+Helix shell (QML desktop on the labwc compositor), Debian package
+universe, Calamares guided setup and a dual-boot friendly bootloader
+story out of the box.
 
-Status: pre-alpha. It boots on real hardware from a live USB.
-Daily-driver and installer testing is in progress — expect rough edges.
+Status: alpha. It boots and installs on real hardware from a live USB,
+updates itself over the air, and the Helix shell runs fullscreen.
+Surge 1.0 releases soon — installer testing on the release image is
+in progress, expect rough edges until then.
 
 ## Try it
 
 1. Build the live ISO (WSL Ubuntu):
    ```bash
    ./scripts/setup-wsl.sh
-   ./scripts/make-iso.sh
+   ./scripts/make-iso.sh --full
    ```
 2. Grab a 4gb usb stick or more and flash `helixos-live.iso` with Rufus in
    ISO mode (set a persistent partition if you want files/settings to
@@ -26,15 +30,19 @@ Daily-driver and installer testing is in progress — expect rough edges.
 
 - `scripts/make-iso.sh` — official Debian live-build pipeline + EFI injection
 - `scripts/add-efi.sh` — Secure Boot chain + dual BIOS/UEFI image assembly
-- `configs/` — GRUB entries, desktop defaults, Calamares branding, lockdown
+- `configs/` — GRUB entries, desktop defaults, Calamares jobs, lockdown
 - `packages/helixos-base/` — base identity deb (OTA channel)
-- `docs/ROADMAP.md` — where this is going
+- `packages/helixos-upgrade/` — major-release upgrades with no data loss
+- `packages/helix-shell/` — the Helix shell (QML desktop + session)
+- `docs/HOW-IT-WORKS.md` — scripts, packages, boot, OTA: how it all works
 
 ## Updates
 
-Installed systems update through APT like any Debian system
-(Discover works as the graphical updater). HelixOS system packages
-ship through our signed repo; base system tracks Debian trixie.
+Installed systems update two ways: Debian security + point releases
+flow in automatically (`unattended-upgrades`), and HelixOS system
+packages — including the shell itself — ship as versioned debs through
+our signed repo, applied by the HelixOS Updater app. Rollback rides on
+btrfs snapshots; the procedure lives in `docs/HOW-IT-WORKS.md`.
 
 ## Device catalog
 
@@ -72,4 +80,3 @@ Testers wanted — especially AMD CPUs and old 4 GB machines.
 Boot the live USB, fill the hardware sheet in Issues, paste failures
 with photos of the screen. Docs, translations, and packaging help
 welcome. Be kind, paste logs.
-

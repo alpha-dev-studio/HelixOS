@@ -178,7 +178,7 @@ libpam-fprintd
 # via live USB + btrfs set-default until the GRUB-menu step is vendored+tested.
 snapper
 btrfs-progs
-# Tier 3 OTA engine (dormant until slot layout ships — see docs/OTA.md)
+# Tier 3 OTA engine (dormant until slot layout ships — see docs/HOW-IT-WORKS.md)
 rauc
 fonts-noto-core
 fonts-hack
@@ -241,7 +241,7 @@ EMPTY_PRE_POST_CLEANUP="yes"
 EMPTY_PRE_POST_MIN_AGE="1800"
 SNAPCFG
 # Tier 3 OTA: A/B image updater present from day one (slot layout + server
-# bundles land with the fleet design in docs/OTA.md).
+# bundles land with the fleet design in docs/HOW-IT-WORKS.md).
 # (rauc package itself added to the list below.)
 # Install-to-disk desktop icon for the live session (stock look: system icon,
 # stock Debian setup branding — zero Helix artwork anywhere)
