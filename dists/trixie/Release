@@ -1,21 +1,21 @@
 Codename: trixie
-Date: Thu, 15 Oct 2026 11:53:34 +0000
+Date: Fri, 16 Oct 2026 08:08:16 +0000
 Label: HelixOS
 Origin: HelixOS
 Suite: testing
 MD5Sum:
- eec3c72efbe140158ecc21a60706f67b              101 Release
- 259428ba331bd014f135502ce50679b7             6635 main/binary-amd64/Packages
- cc4b56b617ffbe37891e80426ef6cce7             2235 main/binary-amd64/Packages.gz
+ a97dc44700f0fdcda7fef25d4c7332f1              101 Release
+ b3c0cda9a35963ab2589e311d9336fd8             7501 main/binary-amd64/Packages
+ 356ea07a43b9346053f6f96ad23b5c97             2621 main/binary-amd64/Packages.gz
 SHA1:
- 866dee171e9c47454f1ffae1e3b9ba71e8240c90              101 Release
- 533da6d698bf1672585fc261a072e851dfcbfca6             6635 main/binary-amd64/Packages
- d81b3f80bb7cf2b12bd566727e938494d470f8bb             2235 main/binary-amd64/Packages.gz
+ 611242538193da6f422415bc00d56132e3f6ca18              101 Release
+ 14d88156ef0bd1db19ea562bb7c7f0c18eba08e2             7501 main/binary-amd64/Packages
+ eb69fdc798d192d007f8e7e8251943c62c168975             2621 main/binary-amd64/Packages.gz
 SHA256:
- 8d03d1bc99a492cd9c6087e838bf21a421736d04f66cd75ed22a314734c60302              101 Release
- e2a1404c03b210265eac6e702dee93877e2d08874ce1798371ae5e168cd86d53             6635 main/binary-amd64/Packages
- 8d8c904ef5342b5a0e0424e8046bae64614ff862be97e2930991cca86b7fc070             2235 main/binary-amd64/Packages.gz
+ f3bd3a181e1424f1f97251cee13e40f7610578744a4f467ea302c0a0b7d7cb06              101 Release
+ 183c17fb444e76dcd9968b1f36d5fd9d2e3c56e8189d27cad0a2a84616db4df4             7501 main/binary-amd64/Packages
+ c56176b71a819f0d2137502536b062a936b9ed09f288d18914e932aa42fb8576             2621 main/binary-amd64/Packages.gz
 SHA512:
- a7a2d0fc45567b14f63230bb632a78641e70e12678e56d8927910d52a091927ce8fb422cd7a1dc4645a847f69d66a1eaa110258a3696b72c08cefb92e2b665d4              101 Release
- 381395dcdeee90631fad35fa25b9d880b7ead5318b88bf1fe77eaeaa24dcdd765b604e511f645e01b103c4b4e0133530ff7a63564b18d538b2e144d7b782b92b             6635 main/binary-amd64/Packages
- eac883d2994a83cef6b9e6df88bc1f56a13af329e3d4285aada0878f2b70b117b98d161534cab737d122b787339f5fe2b1516919eab8386b4c686ddb44acc486             2235 main/binary-amd64/Packages.gz
+ b5071608a0a74c940948c2230b121069ab17066c09a0ec6c4dd919b7e489e381cc9388a6b317c00279e0a19c2cc2d03b4b197e91ef098be324cfecc5cc8d86f1              101 Release
+ f6963b957d470d6ee1ef32e0c1bbd55dab441df08e9adb2a460f9667543518dd6f04d808fe5ad22cd6fa3f255a6ad72b41e9f3a57b3039711490c3dd8b8863c0             7501 main/binary-amd64/Packages
+ b814ded9d8eed4a134ebbeb5cdb71b15b320dda4e2e27dcf9ddfb601a8225985b309f873f0e5daf1580c65447cd8a2acbc4bcb8ced1b35c2947a1de6e25807d5             2621 main/binary-amd64/Packages.gz

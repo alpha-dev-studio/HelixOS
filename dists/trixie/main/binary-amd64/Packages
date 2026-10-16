@@ -1,3 +1,23 @@
+Package: helix-shell
+Architecture: all
+Version: 1.0-4
+Priority: optional
+Section: admin
+Maintainer: HelixOS <helixos@localhost>
+Installed-Size: 235
+Depends: python3-pyqt6, qml6-module-qtquick, qml6-module-qtquick-controls
+Filename: dists/trixie/main/binary-amd64/helix-shell_1.0-4_all.deb
+Size: 26292
+MD5sum: 0327de473ad41009dd481353868c0fa4
+SHA1: 4a323ed8cfaf21f51b0cbf909319b9530953db56
+SHA256: bb15412ddc4599b5ee2d49734b6d0457bdf33323c886ca149e34e8eedb8f50cd
+SHA512: 1a4ab6a99ab5bf028af7669fb729fa84fa2cf8bb20a1d4cbd52cbe6125e4f80d5ebcda1d6a2af487c8819648e2329bf2e5104883acf307e3ca32d4143959254c
+Description: HelixOS desktop shell (preview)
+ The Helix shell QML experience: lock screen, desktop, taskbar,
+ Start menu, flyouts and app suite. Preview fullscreen over any
+ session via the Helix Shell launcher; full session integration
+ lands with a later release.
+
 Package: helixos-base
 Architecture: all
 Version: 1.0-1
@@ -107,14 +127,14 @@ Version: 1.0-7
 Priority: optional
 Section: admin
 Maintainer: HelixOS <helixos@localhost>
-Installed-Size: 37
+Installed-Size: 38
 Depends: python3-pyqt6
 Filename: dists/trixie/main/binary-amd64/helixos-base_1.0-7_all.deb
-Size: 9092
-MD5sum: 96d716291c15db781c3883c81feaee0d
-SHA1: 1d17bd2cbbfa1700f9fdd47908805280dbb073de
-SHA256: 678ad1a3eaa4dfdd0d2335207612f955b7b6f9294c6c73e57fc6b4c32224bcfb
-SHA512: c936e1134fae8022db5da43456a7f58e4a0cbf4a14be398ca4db3a438440958168da21bcef3f7c2c3e09a07ef9736e0ddff9317bc4c0445a80670af8e2e1b034
+Size: 9634
+MD5sum: eae5e0ab768f7d2fab1e66c465361695
+SHA1: d02a872b2c7c3b264892a3f207995d6636e04234
+SHA256: df4f063766db40470dc1dc918f6fa605934256c3434d43475151b39b75911e20
+SHA512: fed23e883aafd536d8abbd6e0f9940d0c1ef6afc5b02be8cb837a646556fb6a28c6493943f080c4be4d37f0fa59d9ad726e64d3a21e43c0d8103e64d0163e15a
 Description: HelixOS 1.0 Surge base identity files
  Release file, defaults, HelixOS Updater app, and version plumbing.
  Future updates ship as new versions of this package (OTA via apt).
@@ -144,14 +164,14 @@ Version: 1.0-2
 Priority: optional
 Section: admin
 Maintainer: HelixOS <helixos@localhost>
-Installed-Size: 12
+Installed-Size: 13
 Depends: snapper, btrfs-progs, apt
 Filename: dists/trixie/main/binary-amd64/helixos-upgrade_1.0-2_all.deb
-Size: 2718
-MD5sum: 574ec72edada6355318371a1cf537883
-SHA1: d0dc58dc31a0d3e3ec3a85531a0b63271d6b27a2
-SHA256: fe4d8919688e2c852d0e5bd8e1c86c64bd8c68964d18bed24cfbd43137bdf159
-SHA512: 0cd7d3a5c42a0b93c73f9d00460d2fcc5db8a1dd56186b0594dc93fa0c5a7cb11c6484a7caeafe97c788d846d6ac880917e6e3a5b6e7af4722d9afce9f6aeb6a
+Size: 3254
+MD5sum: 817cd596a1f24e5d2998b05aa6e3caa0
+SHA1: 1373f12572a503f5a61a3095db637a76bf009825
+SHA256: ad23e8235f98ff40f628dd065a1b62c7cceb681f1cf0d60c16bebc3274b54a67
+SHA512: ab0370c7adb982d4a8de22e375191d6dd8545408e03ae9c3bb4d160e5fa65ca3fe202795bb245b919f4879073e6116edb74b4e2ab33ccf15ad36ff1506e5a5bc
 Description: HelixOS major-release upgrades with no data loss (Surge->Arc->Flux)
  Snapshots the system, swaps apt sources to the next release suite,
  upgrades in stages, and leaves a GRUB-bootable fallback snapshot.
