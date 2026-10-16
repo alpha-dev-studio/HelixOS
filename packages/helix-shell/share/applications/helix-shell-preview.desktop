@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Helix Shell (Preview)
+Comment=Preview the Helix desktop shell fullscreen
+Exec=helix-shell
+Icon=preferences-system
+Terminal=false
+Type=Application
+Categories=System;

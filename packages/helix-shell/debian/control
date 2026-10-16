@@ -1,0 +1,15 @@
+Source: helix-shell
+Section: admin
+Priority: optional
+Maintainer: HelixOS <helixos@localhost>
+Build-Depends: debhelper-compat (= 13)
+Standards-Version: 4.6.2
+
+Package: helix-shell
+Architecture: all
+Depends: ${misc:Depends}, python3-pyqt6, qml6-module-qtquick, qml6-module-qtquick-controls
+Description: HelixOS desktop shell (preview)
+ The Helix shell QML experience: lock screen, desktop, taskbar,
+ Start menu, flyouts and app suite. Preview fullscreen over any
+ session via the Helix Shell launcher; full session integration
+ lands with a later release.

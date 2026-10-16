@@ -94,23 +94,27 @@ mkdir -p config/includes.chroot/tmp/helixos-debs
 rm -f config/includes.chroot/tmp/helixos-debs/*.deb
 cp -vf "$DEBTMP"/*.deb config/includes.chroot/tmp/helixos-debs/ 2>/dev/null || echo "WARNING: no helixos debs built"
 rm -rf "$DEBTMP"
-# HelixOS package set: full desktop — settings, panel/taskbar, kickoff start menu,
-# system tray, konsole terminal, systemmonitor task manager, discover store, plymouth boot splash
+# HelixOS package set: Helix shell on labwc (no Plasma) — Settings, Files,
+# Store, Terminal, Calculator, Task Manager, Paint all ship as Helix QML.
+# dolphin/konsole stay ONLY as fallbacks (Helix Files/Terminal run real
+# commands via the bridge next; rescue still shells to konsole). kate/okular/
+# ark/spectacle stay as utility apps with no Helix replacement yet.
 mkdir -p config/package-lists
 cat > config/package-lists/helixos.list.chroot <<'PKGS'
-kde-plasma-desktop
+labwc
+xwayland
 sddm
-systemsettings
+qt6-wayland
+qml6-module-qtquick
+qml6-module-qtquick-controls
+wlr-randr
+brightnessctl
 dolphin
 konsole
 kate
 okular
 ark
 kde-spectacle
-plasma-systemmonitor
-plasma-discover
-plasma-nm
-plasma-pa
 firefox-esr
 network-manager
 pipewire
@@ -119,8 +123,6 @@ mesa-utils
 plymouth
 plymouth-themes
 unattended-upgrades
-packagekit
-packagekit-tools
 pkexec
 # Every hardware driver/firmware Debian trixie ships (nothing custom — kernel
 # drivers already ride in linux-image; these are the binary blobs). Covers
@@ -164,11 +166,10 @@ intel-microcode
 # step works with no network (target inherits them via unpackfs)
 grub-efi-amd64
 shim-signed
-# Market wins a solo dev can ship: laptop power (PPD integrates with Plasma),
-# one sane app story (Flatpak + Discover backend), fingerprint readers.
+# Market wins a solo dev can ship: laptop power, one sane app story
+# (Flatpak CLI; Discover and its backend left with Plasma), fingerprint readers.
 power-profiles-daemon
 flatpak
-plasma-discover-backend-flatpak
 python3-pyqt6
 fprintd
 libpam-fprintd

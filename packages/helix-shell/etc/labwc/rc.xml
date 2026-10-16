@@ -1,0 +1,9 @@
+<?xml version="1.0"?>
+<!-- HelixOS labwc config: minimal on purpose. The shell draws its own
+     chrome; the compositor only rounds server-side frames and stays out
+     of the way. Unknown keys are ignored by older labwc — safe. -->
+<labwc_config>
+  <theme>
+    <cornerRadius>8</cornerRadius>
+  </theme>
+</labwc_config>

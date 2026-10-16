@@ -1,0 +1,35 @@
+helix-shell (1.0-4) trixie; urgency=medium
+
+  * Icons wired to the OS: desktop icons launch + trash, real file
+    browsing with navigation, working End task, Browser opens
+    Firefox, launch() takes arguments, bridge reports PIDs.
+
+ -- HelixOS <helixos@localhost>  Thu, 16 Oct 2026 00:00:00 +0000
+
+helix-shell (1.0-3) trixie; urgency=medium
+
+  * Helix OS bridge: app launching, loginctl power, NM wifi,
+    sysfs battery, wpctl volume, brightness (+udev rule),
+    /proc task list, home listing, wlr-randr modes, pkexec
+    update check. Win11 menu + All apps, taskbar alignment,
+    Personalisation/accounts/apps/updates pages.
+
+ -- HelixOS <helixos@localhost>  Thu, 16 Oct 2026 00:00:00 +0000
+
+helix-shell (1.0-2) trixie; urgency=medium
+
+  * Helix graphical session: labwc + helix-shell via SDDM (helix.desktop).
+  * Minimal labwc theme (rounded server-side frames); Wayland env for
+    Qt/Firefox; min/max chrome, tri-state pins, launch-on-top,
+    Personalisation, Paint, tray flyout, Win11-centered shell.
+
+ -- HelixOS <helixos@localhost>  Thu, 16 Oct 2026 00:00:00 +0000
+
+helix-shell (1.0-1) trixie; urgency=medium
+
+  * Helix desktop shell preview: lock, desktop, taskbar, Start,
+    flyouts, Settings, Files, Store, Terminal, Calculator,
+    Task Manager, Paint, power, first-run wizard, Alt-Tab.
+  * Preview runner (helix-shell) + launcher; session integration later.
+
+ -- HelixOS <helixos@localhost>  Thu, 16 Oct 2026 00:00:00 +0000

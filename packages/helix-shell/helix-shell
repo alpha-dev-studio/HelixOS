@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""helix-shell — run the HelixOS shell fullscreen, with the Helix OS bridge.
+
+The bridge is a single `Helix` context object injected into QML. Every slot
+degrades gracefully (empty string / -1 / empty list) when its tool is absent,
+so the shell also runs on foreign systems with dead-but-harmless controls.
+Async operations (wifi scan, update check) run in threads and report back
+over signals; everything else answers synchronously and fast.
+"""
+import glob
+import os
+import pwd
+import shlex
+import shutil
+import subprocess
+import sys
+import threading
+
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtQml import QQmlApplicationEngine
+from PyQt6.QtCore import QObject, pyqtSignal, pyqtSlot
+
+BASE = "/usr/share/helix-shell"
+UPDATER_BACKEND = "/usr/libexec/helixos-updater-backend"
+APP_DIRS = ("/usr/share/applications",
+            os.path.expanduser("~/.local/share/applications"))
+
+
+def run(cmd, timeout=10):
+    """Run cmd, return stdout stripped; '' on any failure."""
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return r.stdout.strip()
+    except Exception:
+        return ""
+
+
+class HelixBridge(QObject):
+    updatesReady = pyqtSignal(str)
+    wifiReady = pyqtSignal(list)
+
+    # ---- identity ----
+    @pyqtSlot(result=str)
+    def userName(self):
+        try:
+            return pwd.getpwuid(os.getuid()).pw_name
+        except Exception:
+            return "helix"
+
+    # ---- app launching ----
+    @pyqtSlot(str, str, result=bool)
+    def launch(self, desktop_id, args=""):
+        name = desktop_id if desktop_id.endswith(".desktop") else desktop_id + ".desktop"
+        for d in APP_DIRS:
+            path = os.path.join(d, name)
+            if not os.path.isfile(path):
+                continue
+            exe = None
+            for line in open(path, errors="replace"):
+                if line.startswith("Exec="):
+                    exe = line[5:].strip()
+                    break
+            if not exe:
+                return False
+            parts = shlex.split(exe)
+            parts = [p for p in parts if not (p.startswith("%") and len(p) == 2)]
+            if args:
+                parts += shlex.split(args)
+            if not parts:
+                return False
+            try:
+                subprocess.Popen(parts, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+                return True
+            except Exception:
+                return False
+        return False
+
+    @pyqtSlot(int, result=bool)
+    def killPid(self, pid):
+        """SIGTERM a process, but only one owned by this user. Never PID 1."""
+        try:
+            pid = int(pid)
+            if pid <= 1:
+                return False
+            import signal as _signal
+            with open("/proc/%d/status" % pid) as f:
+                for line in f:
+                    if line.startswith("Uid:"):
+                        if int(line.split()[1]) != os.getuid():
+                            return False
+                        break
+            os.kill(pid, _signal.SIGTERM)
+            return True
+        except Exception:
+            return False
+
+    # ---- power (logind: no root needed on the active seat) ----
+    @pyqtSlot(str)
+    def power(self, op):
+        cmds = {"off": ["loginctl", "poweroff"],
+                "reboot": ["loginctl", "reboot"],
+                "sleep": ["loginctl", "suspend"]}
+        if op in cmds:
+            try:
+                subprocess.Popen(cmds[op], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            except Exception:
+                pass
+
+    # ---- wifi (NetworkManager CLI, ships with network-manager) ----
+    @pyqtSlot(result=str)
+    def wifiState(self):
+        out = run(["nmcli", "-t", "-f", "WIFI", "radio"])
+        return out if out in ("enabled", "disabled") else ""
+
+    @pyqtSlot(bool)
+    def setWifi(self, on):
+        run(["nmcli", "radio", "wifi", "on" if on else "off"])
+
+    @pyqtSlot()
+    def refreshWifi(self):
+        def work():
+            out = run(["nmcli", "-t", "-f", "IN-USE,SSID,SIGNAL", "dev", "wifi",
+                       "list"], timeout=20)
+            nets = []
+            for line in out.splitlines():
+                parts = line.split(":")
+                if len(parts) < 3:
+                    continue
+                active = parts[0] == "*"
+                try:
+                    signal = int(parts[-1])
+                except ValueError:
+                    signal = 0
+                ssid = ":".join(parts[1:-1])
+                if ssid:
+                    nets.append({"ssid": ssid, "signal": signal,
+                                 "active": active})
+            nets.sort(key=lambda n: (not n["active"], -n["signal"]))
+            self.wifiReady.emit(nets[:12])
+        threading.Thread(target=work, daemon=True).start()
+
+    # ---- battery (sysfs, no deps) ----
+    @pyqtSlot(result="QVariant")
+    def battery(self):
+        for bat in sorted(glob.glob("/sys/class/power_supply/BAT*")):
+            try:
+                with open(os.path.join(bat, "capacity")) as f:
+                    pct = int(f.read().strip())
+                with open(os.path.join(bat, "status")) as f:
+                    state = f.read().strip()
+                return {"pct": pct, "state": state}
+            except Exception:
+                continue
+        return {"pct": 100, "state": "AC"}
+
+    # ---- volume (wireplumber CLI) ----
+    @pyqtSlot(result=float)
+    def volume(self):
+        if not shutil.which("wpctl"):
+            return -1.0
+        out = run(["wpctl", "get-volume", "@DEFAULT_AUDIO_SINK@"])
+        try:
+            return float(out.split(":")[1].strip().split()[0])
+        except Exception:
+            return -1.0
+
+    @pyqtSlot(float)
+    def setVolume(self, level):
+        if not shutil.which("wpctl"):
+            return
+        level = max(0.0, min(1.0, level))
+        subprocess.Popen(["wpctl", "set-volume", "@DEFAULT_AUDIO_SINK@",
+                          "%.2f" % level],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.Popen(["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "0"],
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # ---- brightness (brightnessctl + udev rule shipped in helix-shell) ----
+    @pyqtSlot(result=float)
+    def brightness(self):
+        if shutil.which("brightnessctl"):
+            out = run(["brightnessctl", "-m"])
+            try:
+                parts = out.split(",")
+                return int(parts[2]) / int(parts[4])
+            except Exception:
+                pass
+        for dev in sorted(glob.glob("/sys/class/backlight/*")):
+            try:
+                with open(os.path.join(dev, "brightness")) as f:
+                    cur = int(f.read().strip())
+                with open(os.path.join(dev, "max_brightness")) as f:
+                    maximum = int(f.read().strip())
+                return cur / maximum if maximum else -1.0
+            except Exception:
+                continue
+        return -1.0
+
+    @pyqtSlot(float)
+    def setBrightness(self, level):
+        level = max(0.05, min(1.0, level))
+        if shutil.which("brightnessctl"):
+            subprocess.Popen(["brightnessctl", "s", "%d%%" % int(level * 100)],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # ---- processes (sampled /proc deltas, no deps) ----
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._prev_procs = None
+        self._prev_total = 0
+
+    def _sample(self):
+        procs = {}
+        for pid in os.listdir("/proc"):
+            if not pid.isdigit():
+                continue
+            try:
+                with open("/proc/%s/stat" % pid) as f:
+                    parts = f.read().rsplit(")", 1)[1].split()
+                ticks = int(parts[11]) + int(parts[12])
+                with open("/proc/%s/comm" % pid) as f:
+                    comm = f.read().strip()
+                with open("/proc/%s/statm" % pid) as f:
+                    rss_mb = int(f.read().split()[1]) * 4096 // 1048576
+                procs[int(pid)] = (ticks, comm, rss_mb)
+            except Exception:
+                continue
+        try:
+            with open("/proc/stat") as f:
+                total = sum(map(int, f.readline().split()[1:]))
+        except Exception:
+            total = 0
+        return procs, total
+
+    @pyqtSlot(result="QVariant")
+    def processes(self):
+        cur, total = self._sample()
+        if self._prev_procs is None or total <= self._prev_total:
+            self._prev_procs, self._prev_total = cur, total
+            return []
+        dt = total - self._prev_total
+        rows = []
+        for pid, (ticks, comm, rss) in cur.items():
+            old = self._prev_procs.get(pid)
+            if old is None:
+                continue
+            cpu = (ticks - old[0]) / dt * 100.0
+            if cpu < 0:
+                cpu = 0.0
+            mem = "%d MB" % rss if rss < 1024 else "%.1f GB" % (rss / 1024)
+            rows.append({"proc": comm, "cpu": "%.1f%%" % cpu, "mem": mem,
+                         "_cpu": cpu, "pid": pid})
+        self._prev_procs, self._prev_total = cur, total
+        rows.sort(key=lambda r: r["_cpu"], reverse=True)
+        return [{"proc": r["proc"], "cpu": r["cpu"], "mem": r["mem"],
+                 "pid": r["pid"]} for r in rows[:8]]
+
+    # ---- files (plain directory listing) ----
+    @pyqtSlot(str, result="QVariant")
+    def listDir(self, path):
+        if path == "trash://":
+            return self._listTrash()
+        base = path or os.path.expanduser("~")
+        try:
+            names = sorted(os.listdir(base))
+        except Exception:
+            return []
+        out = []
+        for n in names:
+            if n.startswith("."):
+                continue
+            full = os.path.join(base, n)
+            out.append({"name": n, "isdir": os.path.isdir(full)})
+            if len(out) >= 60:
+                break
+        out.sort(key=lambda e: (not e["isdir"], e["name"].lower()))
+        return out
+
+    def _listTrash(self):
+        if not shutil.which("gio"):
+            return []
+        out = run(["gio", "list", "trash:///"])
+        return [{"name": ln.strip(), "isdir": False}
+                for ln in out.splitlines() if ln.strip()][:60]
+
+    # ---- display modes (labwc via wlr-randr; empty elsewhere) ----
+    @pyqtSlot(result="QVariant")
+    def screenModes(self):
+        if not shutil.which("wlr-randr"):
+            return []
+        out = run(["wlr-randr"])
+        modes = []
+        for line in out.splitlines():
+            s = line.strip()
+            if " px, " in s or s.endswith(" px"):
+                res = s.split(" px")[0].replace("x", " x ")
+                if res not in modes:
+                    modes.append(res)
+        return modes
+
+    @pyqtSlot(str)
+    def setMode(self, mode):
+        if not shutil.which("wlr-randr"):
+            return
+        out = run(["wlr-randr"])
+        output = ""
+        for line in out.splitlines():
+            if line and not line[0].isspace():
+                output = line.split()[0]
+                break
+        if output and "x" in mode:
+            subprocess.Popen(["wlr-randr", "--output", output, "--mode",
+                              mode.replace(" ", "")],
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    # ---- HelixOS updates (privileged backend via pkexec, threaded) ----
+    @pyqtSlot()
+    def checkUpdates(self):
+        def work():
+            out = run(["pkexec", UPDATER_BACKEND, "__list"], timeout=150)
+            found = [ln for ln in out.splitlines() if ln.startswith("helixos")]
+            if found:
+                self.updatesReady.emit("%d update(s) available." % len(found))
+            else:
+                self.updatesReady.emit("You're up to date. "
+                                       "Helix watches over this system.")
+        threading.Thread(target=work, daemon=True).start()
+
+
+def main():
+    app = QApplication(sys.argv)
+    engine = QQmlApplicationEngine()
+    engine.rootContext().setContextProperty("Helix", HelixBridge(engine))
+    engine.addImportPath(os.path.join(BASE, "qml"))
+    engine.load(os.path.join(BASE, "qml", "HelixShellContent", "Shell.qml"))
+    if not engine.rootObjects():
+        print("helix-shell: failed to load Shell.qml", file=sys.stderr)
+        return 1
+    return app.exec()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

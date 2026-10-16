@@ -1,0 +1,6 @@
+[Desktop Entry]
+Name=Helix
+Comment=HelixOS shell on labwc
+Exec=/usr/bin/helix-session
+Type=Application
+DesktopNames=Helix

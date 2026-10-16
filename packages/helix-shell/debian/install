@@ -1,0 +1,7 @@
+qml/* usr/share/helix-shell/
+helix-shell usr/bin/
+helix-session usr/bin/
+share/wayland-sessions/helix.desktop usr/share/wayland-sessions/
+share/applications/helix-shell-preview.desktop usr/share/applications/
+etc/labwc/rc.xml etc/labwc/
+etc/udev/rules.d/90-helixos-backlight.rules etc/udev/rules.d/
