@@ -334,8 +334,10 @@ def main():
     app = QApplication(sys.argv)
     engine = QQmlApplicationEngine()
     engine.rootContext().setContextProperty("Helix", HelixBridge(engine))
-    engine.addImportPath(os.path.join(BASE, "qml"))
-    engine.load(os.path.join(BASE, "qml", "HelixShellContent", "Shell.qml"))
+    # debian/install maps qml/* -> /usr/share/helix-shell/, so the module
+    # root is BASE itself (BASE/HelixShell/qmldir) — NOT BASE/qml.
+    engine.addImportPath(BASE)
+    engine.load(os.path.join(BASE, "HelixShellContent", "Shell.qml"))
     if not engine.rootObjects():
         print("helix-shell: failed to load Shell.qml", file=sys.stderr)
         return 1

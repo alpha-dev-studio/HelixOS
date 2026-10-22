@@ -7,7 +7,7 @@ Standards-Version: 4.6.2
 
 Package: helix-shell
 Architecture: all
-Depends: ${misc:Depends}, python3-pyqt6, qml6-module-qtquick, qml6-module-qtquick-controls
+Depends: ${misc:Depends}, python3-pyqt6, python3-pyqt6.qtqml, python3-pyqt6.qtquick, qml6-module-qtquick, qml6-module-qtquick-controls
 Description: HelixOS desktop shell (preview)
  The Helix shell QML experience: lock screen, desktop, taskbar,
  Start menu, flyouts and app suite. Preview fullscreen over any

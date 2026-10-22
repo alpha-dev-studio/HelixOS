@@ -1,0 +1,13 @@
+# Start the Helix shell inside an X11 session (e.g. SDDM greeter with
+# the Xorg backend). The Wayland session path handles this via
+# /usr/share/wayland-sessions. Keeps the desktop reachable either way.
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Helix Shell
+Comment=Start the Helix desktop shell
+Exec=/usr/bin/helix-session
+Icon=preferences-system
+Categories=System;
+X-GNOME-Autostart-enabled=true
+X-KDE-autostart-phase=1

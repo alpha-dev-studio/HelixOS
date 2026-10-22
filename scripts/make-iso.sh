@@ -104,6 +104,11 @@ cat > config/package-lists/helixos.list.chroot <<'PKGS'
 labwc
 xwayland
 sddm
+# Greeter theme MUST stay plasma-free: sddm-theme-breeze depends on
+# plasma-workspace and silently reinstalled 324 plasma packages, which
+# the purge hook then ripped out again (theme included). maldives pulls
+# nothing but QtQuick.
+sddm-theme-maldives
 qt6-wayland
 qml6-module-qtquick
 qml6-module-qtquick-controls
@@ -169,8 +174,12 @@ shim-signed
 # Market wins a solo dev can ship: laptop power, one sane app story
 # (Flatpak CLI; Discover and its backend left with Plasma), fingerprint readers.
 power-profiles-daemon
+polkit-kde-agent-1
+
 flatpak
 python3-pyqt6
+python3-pyqt6.qtqml
+python3-pyqt6.qtquick
 fprintd
 libpam-fprintd
 # Rollback engine: btrfs snapshots around every upgrade (openSUSE model).
@@ -213,7 +222,7 @@ printf '127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n127.0.1.1
 # exclusively inside the HelixOS Updater app (it enables the source for the
 # duration of its own refresh/install, then removes it). No helixos.* file may
 # ever be written to sources.list.d here — that separation is the whole point.
-printf '[Theme]\nCurrent=breeze\n' > config/includes.chroot/etc/sddm.conf.d/helixos.conf
+printf '[Theme]\nCurrent=maldives\n' > config/includes.chroot/etc/sddm.conf.d/helixos.conf
 # Tier 2 OTA: security updates install themselves overnight, everything else
 # shows up in Discover. Without this file the package alone does nothing.
 mkdir -p config/includes.chroot/etc/apt/apt.conf.d
@@ -445,7 +454,12 @@ chmod +x config/hooks/0099-helixos-liveuser.hook.chroot
 cat > config/hooks/0099-helixos-local-debs.hook.chroot <<'HOOK'
 #!/bin/sh
 if ls /tmp/helixos-debs/*.deb >/dev/null 2>&1; then
-  dpkg -i /tmp/helixos-debs/*.deb
+  dpkg -i /tmp/helixos-debs/*.deb || true
+  # Self-heal: dpkg alone can't resolve dependencies, and the chroot
+  # package pass skips on stamps — so pull any missing runtime deps of
+  # our debs from Debian here. Without this, a new Depends lands in the
+  # image uninstalled and its app dies on first boot (seen live).
+  apt-get install -f -y 2>&1 | tail -n2 || true
   rm -rf /tmp/helixos-debs
 fi
 HOOK
@@ -517,6 +531,20 @@ apt-get purge -y debian-installer-launcher 2>&1 | tail -n2 || true
 rm -f /etc/skel/Desktop/install-debian.desktop /usr/share/applications/install-debian.desktop /usr/share/applications/calamares-install-debian.desktop 2>/dev/null || true
 HOOK
 chmod +x config/hooks/0099-helixos-purge-di.hook.chroot
+# Purge Plasma: removed from the package list, but live-build never
+# uninstalls — the persistent chroot would ship it forever (and SDDM would
+# keep offering it). Runs every build, no-ops once clean. Guards against
+# the KDE target/portal leftovers left behind by `sddm` + breeze's
+# plasma-workspace dependency too.
+cat > config/hooks/0099-helixos-purge-plasma.hook.chroot <<'HOOK'
+#!/bin/sh
+apt-get purge -y kde-plasma-desktop plasma-workspace plasma-desktop systemsettings plasma-systemmonitor plasma-discover plasma-discover-backend-flatpak packagekit packagekit-tools plasma-nm plasma-pa plasma-core.target.wants 2>&1 | tail -n3 || true
+# target.wants is a service symlink set, not a package: trim directly
+rm -f /etc/systemd/user/plasma-core.target.wants/* 2>/dev/null || true
+rmdir /etc/systemd/user/plasma-core.target.wants 2>/dev/null || true
+apt-get autoremove -y 2>&1 | tail -n2 || true
+HOOK
+chmod +x config/hooks/0099-helixos-purge-plasma.hook.chroot
 # binary hook: populate isolinux dir with trixie syslinux modules (old live-build
 # only copies the theme, leaving ldlinux.c32 et al behind -> "Failed to load ldlinux.c32").
 # CRITICAL: isolinux.bin itself must come from the SAME chroot package — the old
@@ -643,6 +671,13 @@ if [ "${1:-}" = "--full" ] || [ "${2:-}" = "--full" ]; then
   echo "FULL binary rebuild requested."
   sudo rm -rf binary chroot/binary 2>/dev/null || true
   rm -f .build/binary_*
+  # Honor package-list changes: resumed builds skip the install pass via
+  # stamps, so newly added packages would NEVER land in the image (this
+  # silently dropped runtime deps before). Reset the package stamps so
+  # --full always converges the chroot with the current list.
+  rm -f .build/chroot_package-lists.install .build/chroot_package-lists.live \
+    .build/chroot_install-packages.install .build/chroot_install-packages.live \
+    .build/chroot_live-packages 2>/dev/null || true
 fi
 # Remove dead hook subdirs + retired hook files from earlier runs (live-build
 # only reads config/hooks/ flat, and stale files keep executing forever)

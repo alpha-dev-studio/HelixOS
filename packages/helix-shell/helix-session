@@ -23,4 +23,10 @@ done
 helix-shell &
 SHELL_PID=$!
 
+# No systemd user session: start the polkit agent ourselves so pkexec
+# password prompts have a listener in a live/seatd session.
+if command -v polkit-kde-authentication-agent-1 >/dev/null 2>&1; then
+  polkit-kde-authentication-agent-1 &
+fi
+
 wait "$COMPOSITOR_PID"
